@@ -36,15 +36,22 @@
 #include "host/libs/config/cuttlefish_config.h"
 #include "host/libs/config/data_image.h"
 #include "host/libs/vm_manager/crosvm_manager.h"
+#include "host/libs/vm_manager/gem5_manager.h"
 
 // Taken from external/avb/libavb/avb_slot_verify.c; this define is not in the headers
 #define VBMETA_MAX_SIZE 65536ul
+// Taken from external/avb/avbtool.py; this define is not in the headers
+#define MAX_AVB_METADATA_SIZE 69632ul
 
 DECLARE_string(system_image_dir);
 
 DEFINE_string(boot_image, "",
               "Location of cuttlefish boot image. If empty it is assumed to be "
               "boot.img in the directory specified by -system_image_dir.");
+DEFINE_string(
+    init_boot_image, "",
+    "Location of cuttlefish init boot image. If empty it is assumed to "
+    "be init_boot.img in the directory specified by -system_image_dir.");
 DEFINE_string(data_image, "", "Location of the data partition image.");
 DEFINE_string(super_image, "", "Location of the super partition image.");
 DEFINE_string(misc_image, "",
@@ -88,17 +95,21 @@ DECLARE_bool(protected_vm);
 namespace cuttlefish {
 
 using vm_manager::CrosvmManager;
+using vm_manager::Gem5Manager;
 
-bool ResolveInstanceFiles() {
-  if (FLAGS_system_image_dir.empty()) {
-    LOG(ERROR) << "--system_image_dir must be specified.";
-    return false;
-  }
+Result<void> ResolveInstanceFiles() {
+  CF_EXPECT(!FLAGS_system_image_dir.empty(),
+            "--system_image_dir must be specified.");
 
   // If user did not specify location of either of these files, expect them to
   // be placed in --system_image_dir location.
   std::string default_boot_image = FLAGS_system_image_dir + "/boot.img";
   SetCommandLineOptionWithMode("boot_image", default_boot_image.c_str(),
+                               google::FlagSettingMode::SET_FLAGS_DEFAULT);
+  std::string default_init_boot_image =
+      FLAGS_system_image_dir + "/init_boot.img";
+  SetCommandLineOptionWithMode("init_boot_image",
+                               default_init_boot_image.c_str(),
                                google::FlagSettingMode::SET_FLAGS_DEFAULT);
   std::string default_data_image = FLAGS_system_image_dir + "/userdata.img";
   SetCommandLineOptionWithMode("data_image", default_data_image.c_str(),
@@ -129,7 +140,7 @@ bool ResolveInstanceFiles() {
                                default_vbmeta_system_image.c_str(),
                                google::FlagSettingMode::SET_FLAGS_DEFAULT);
 
-  return true;
+  return {};
 }
 void create_overlay_image(const CuttlefishConfig& config,
                           std::string overlay_path) {
@@ -156,6 +167,16 @@ std::vector<ImagePartition> GetOsCompositeDiskConfig() {
   partitions.push_back(ImagePartition{
       .label = "boot_b",
       .image_file_path = FLAGS_boot_image,
+      .read_only = true,
+  });
+  partitions.push_back(ImagePartition{
+      .label = "init_boot_a",
+      .image_file_path = FLAGS_init_boot_image,
+      .read_only = true,
+  });
+  partitions.push_back(ImagePartition{
+      .label = "init_boot_b",
+      .image_file_path = FLAGS_init_boot_image,
       .read_only = true,
   });
   partitions.push_back(ImagePartition{
@@ -227,6 +248,7 @@ std::vector<ImagePartition> GetOsCompositeDiskConfig() {
 }
 
 std::vector<ImagePartition> persistent_composite_disk_config(
+    const CuttlefishConfig& config,
     const CuttlefishConfig::InstanceSpecific& instance) {
   std::vector<ImagePartition> partitions;
 
@@ -237,16 +259,22 @@ std::vector<ImagePartition> persistent_composite_disk_config(
       .label = "uboot_env",
       .image_file_path = instance.uboot_env_image_path(),
   });
+  partitions.push_back(ImagePartition{
+      .label = "vbmeta",
+      .image_file_path = instance.vbmeta_path(),
+  });
   if (!FLAGS_protected_vm) {
     partitions.push_back(ImagePartition{
         .label = "frp",
         .image_file_path = instance.factory_reset_protected_path(),
     });
   }
-  partitions.push_back(ImagePartition{
-      .label = "bootconfig",
-      .image_file_path = instance.persistent_bootconfig_path(),
-  });
+  if (config.bootconfig_supported()) {
+    partitions.push_back(ImagePartition{
+        .label = "bootconfig",
+        .image_file_path = instance.persistent_bootconfig_path(),
+    });
+  }
   return partitions;
 }
 
@@ -381,10 +409,11 @@ bool CreatePersistentCompositeDisk(
         instance.PerInstancePath("persistent_composite_gpt_header.img");
     std::string footer_path =
         instance.PerInstancePath("persistent_composite_gpt_footer.img");
-    CreateCompositeDisk(persistent_composite_disk_config(instance), header_path,
-                        footer_path, instance.persistent_composite_disk_path());
+    CreateCompositeDisk(persistent_composite_disk_config(config, instance),
+                        header_path, footer_path,
+                        instance.persistent_composite_disk_path());
   } else {
-    AggregateImage(persistent_composite_disk_config(instance),
+    AggregateImage(persistent_composite_disk_config(config, instance),
                    instance.persistent_composite_disk_path());
   }
   return true;
@@ -410,13 +439,24 @@ class BootImageRepacker : public Feature {
       LOG(ERROR) << "File not found: " << FLAGS_boot_image;
       return false;
     }
+    // The init_boot partition is be optional for testing boot.img
+    // with the ramdisk inside.
+    if (!FileHasContent(FLAGS_init_boot_image)) {
+      LOG(WARNING) << "File not found: " << FLAGS_init_boot_image;
+    }
 
     if (!FileHasContent(FLAGS_vendor_boot_image)) {
       LOG(ERROR) << "File not found: " << FLAGS_vendor_boot_image;
       return false;
     }
 
-    if (FLAGS_kernel_path.size()) {
+    // Repacking a boot.img doesn't work with Gem5 because the user must always
+    // specify a vmlinux instead of an arm64 Image, and that file can be too
+    // large to be repacked. Skip repack of boot.img on Gem5, as we need to be
+    // able to extract the ramdisk.img in a later stage and so this step must
+    // not fail (..and the repacked kernel wouldn't be used anyway).
+    if (FLAGS_kernel_path.size() &&
+        config_.vm_manager() != Gem5Manager::name()) {
       const std::string new_boot_image_path =
           config_.AssemblyPath("boot_repacked.img");
       bool success =
@@ -467,41 +507,282 @@ class BootImageRepacker : public Feature {
   const CuttlefishConfig& config_;
 };
 
-static void GeneratePersistentBootconfig(
-    const CuttlefishConfig& config,
-    const CuttlefishConfig::InstanceSpecific& instance) {
-  const auto bootconfig_path = instance.persistent_bootconfig_path();
-  if (!FileExists(bootconfig_path)) {
-    CreateBlankImage(bootconfig_path, 1 /* mb */, "none");
+class Gem5ImageUnpacker : public Feature {
+ public:
+  INJECT(Gem5ImageUnpacker(
+      const CuttlefishConfig& config,
+      BootImageRepacker& bir))
+      : config_(config),
+        bir_(bir) {}
+
+  // Feature
+  std::string Name() const override { return "Gem5ImageUnpacker"; }
+
+  std::unordered_set<Feature*> Dependencies() const override {
+    return {
+      static_cast<Feature*>(&bir_),
+    };
   }
 
-  auto bootconfig_fd = SharedFD::Open(bootconfig_path, O_RDWR);
-  CHECK(bootconfig_fd->IsOpen())
-      << "Unable to open bootconfig file: " << bootconfig_fd->StrError();
-
-  //  Cuttlefish for the time being won't be able to support OTA from a
-  //  non-bootconfig kernel to a bootconfig-kernel (or vice versa) IF the device
-  //  is stopped (via stop_cvd). This is rarely an issue since OTA testing run
-  //  on cuttlefish is done within one launch cycle of the device. If this ever
-  //  becomes an issue, this code will have to be rewritten.
-  if (!config.bootconfig_supported()) {
-    return;
+  bool Enabled() const override {
+    // Everything has a bootloader except gem5, so only run this for gem5
+    return config_.vm_manager() == Gem5Manager::name();
   }
 
-  const std::string bootconfig =
-      android::base::Join(BootconfigArgsFromConfig(config, instance), "\n") +
-      "\n";
-  ssize_t bytesWritten = WriteAll(bootconfig_fd, bootconfig);
-  CHECK(bytesWritten == bootconfig.size());
-  LOG(DEBUG) << "Bootconfig parameters from vendor boot image and config are "
-             << ReadFile(bootconfig_path);
+ protected:
+  bool Setup() override {
+    /* Unpack the original or repacked boot and vendor boot ramdisks, so that
+     * we have access to the baked bootconfig and raw compressed ramdisks.
+     * This allows us to emulate what a bootloader would normally do, which
+     * Gem5 can't support itself. This code also copies the kernel again
+     * (because Gem5 only supports raw vmlinux) and handles the bootloader
+     * binaries specially. This code is just part of the solution; it only
+     * does the parts which are instance agnostic.
+     */
 
-  const off_t bootconfig_size_bytes =
-      AlignToPowerOf2(bootconfig.size(), PARTITION_SIZE_SHIFT);
-  CHECK(bootconfig_fd->Truncate(bootconfig_size_bytes) == 0)
-      << "`truncate --size=" << bootconfig_size_bytes << " bytes "
-      << bootconfig_path << "` failed:" << bootconfig_fd->StrError();
-}
+    if (!FileHasContent(FLAGS_boot_image)) {
+      LOG(ERROR) << "File not found: " << FLAGS_boot_image;
+      return false;
+    }
+    // The init_boot partition is be optional for testing boot.img
+    // with the ramdisk inside.
+    if (!FileHasContent(FLAGS_init_boot_image)) {
+      LOG(WARNING) << "File not found: " << FLAGS_init_boot_image;
+    }
+
+    if (!FileHasContent(FLAGS_vendor_boot_image)) {
+      LOG(ERROR) << "File not found: " << FLAGS_vendor_boot_image;
+      return false;
+    }
+
+    const std::string unpack_dir = config_.assembly_dir();
+
+    bool success = UnpackBootImage(FLAGS_init_boot_image, unpack_dir);
+    if (!success) {
+      LOG(ERROR) << "Failed to extract the init boot image";
+      return false;
+    }
+
+    success = UnpackVendorBootImageIfNotUnpacked(FLAGS_vendor_boot_image,
+                                                 unpack_dir);
+    if (!success) {
+      LOG(ERROR) << "Failed to extract the vendor boot image";
+      return false;
+    }
+
+    // Assume the user specified a kernel manually which is a vmlinux
+    std::ofstream kernel(unpack_dir + "/kernel", std::ios_base::binary |
+                                                 std::ios_base::trunc);
+    std::ifstream vmlinux(FLAGS_kernel_path, std::ios_base::binary);
+    kernel << vmlinux.rdbuf();
+    kernel.close();
+
+    // Gem5 needs the bootloader binary to be a specific directory structure
+    // to find it. Create a 'binaries' directory and copy it into there
+    const std::string binaries_dir = unpack_dir + "/binaries";
+    if (mkdir(binaries_dir.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) < 0
+        && errno != EEXIST) {
+      PLOG(ERROR) << "Failed to create dir: \"" << binaries_dir << "\" ";
+      return false;
+    }
+    std::ofstream bootloader(binaries_dir + "/" +
+                             cpp_basename(FLAGS_bootloader),
+                             std::ios_base::binary | std::ios_base::trunc);
+    std::ifstream src_bootloader(FLAGS_bootloader, std::ios_base::binary);
+    bootloader << src_bootloader.rdbuf();
+    bootloader.close();
+
+    // Gem5 also needs the ARM version of the bootloader, even though it
+    // doesn't use it. It'll even open it to check it's a valid ELF file.
+    // Work around this by copying such a named file from the same directory
+    std::ofstream boot_arm(binaries_dir + "/boot.arm",
+                           std::ios_base::binary | std::ios_base::trunc);
+    std::ifstream src_boot_arm(cpp_dirname(FLAGS_bootloader) + "/boot.arm",
+                               std::ios_base::binary);
+    boot_arm << src_boot_arm.rdbuf();
+    boot_arm.close();
+
+    return true;
+  }
+
+ private:
+  const CuttlefishConfig& config_;
+  BootImageRepacker& bir_;
+};
+
+class GeneratePersistentBootconfig : public Feature {
+ public:
+  INJECT(GeneratePersistentBootconfig(
+      const CuttlefishConfig& config,
+      const CuttlefishConfig::InstanceSpecific& instance))
+      : config_(config), instance_(instance) {}
+
+  // Feature
+  std::string Name() const override {
+    return "GeneratePersistentBootconfig";
+  }
+  bool Enabled() const override {
+    return (!config_.protected_vm());
+  }
+
+ private:
+  std::unordered_set<Feature*> Dependencies() const override { return {}; }
+  bool Setup() override {
+    //  Cuttlefish for the time being won't be able to support OTA from a
+    //  non-bootconfig kernel to a bootconfig-kernel (or vice versa) IF the
+    //  device is stopped (via stop_cvd). This is rarely an issue since OTA
+    //  testing run on cuttlefish is done within one launch cycle of the device.
+    //  If this ever becomes an issue, this code will have to be rewritten.
+    if(!config_.bootconfig_supported()) {
+      return true;
+    }
+
+    const auto bootconfig_path = instance_.persistent_bootconfig_path();
+    if (!FileExists(bootconfig_path)) {
+      if (!CreateBlankImage(bootconfig_path, 1 /* mb */, "none")) {
+        LOG(ERROR) << "Failed to create image at " << bootconfig_path;
+        return false;
+      }
+    }
+
+    auto bootconfig_fd = SharedFD::Open(bootconfig_path, O_RDWR);
+    if (!bootconfig_fd->IsOpen()) {
+      LOG(ERROR) << "Unable to open bootconfig file: "
+                 << bootconfig_fd->StrError();
+      return false;
+    }
+
+    const std::string bootconfig =
+        android::base::Join(BootconfigArgsFromConfig(config_, instance_),
+                            "\n") +
+        "\n";
+    ssize_t bytesWritten = WriteAll(bootconfig_fd, bootconfig);
+    LOG(DEBUG) << "bootconfig size is " << bytesWritten;
+    if (bytesWritten != bootconfig.size()) {
+      LOG(ERROR) << "Failed to write contents of bootconfig to \""
+                 << bootconfig_path << "\"";
+      return false;
+    }
+    LOG(DEBUG) << "Bootconfig parameters from vendor boot image and config are "
+               << ReadFile(bootconfig_path);
+
+    if (bootconfig_fd->Truncate(bytesWritten) != 0) {
+      LOG(ERROR) << "`truncate --size=" << bytesWritten << " bytes "
+                 << bootconfig_path << "` failed:" << bootconfig_fd->StrError();
+      return false;
+    }
+    bootconfig_fd->Close();
+
+    const off_t bootconfig_size_bytes = AlignToPowerOf2(
+        MAX_AVB_METADATA_SIZE + bytesWritten, PARTITION_SIZE_SHIFT);
+
+    auto avbtool_path = HostBinaryPath("avbtool");
+    Command bootconfig_hash_footer_cmd(avbtool_path);
+    bootconfig_hash_footer_cmd.AddParameter("add_hash_footer");
+    bootconfig_hash_footer_cmd.AddParameter("--image");
+    bootconfig_hash_footer_cmd.AddParameter(bootconfig_path);
+    bootconfig_hash_footer_cmd.AddParameter("--partition_size");
+    bootconfig_hash_footer_cmd.AddParameter(bootconfig_size_bytes);
+    bootconfig_hash_footer_cmd.AddParameter("--partition_name");
+    bootconfig_hash_footer_cmd.AddParameter("bootconfig");
+    bootconfig_hash_footer_cmd.AddParameter("--key");
+    bootconfig_hash_footer_cmd.AddParameter(
+        DefaultHostArtifactsPath("etc/cvd_avb_testkey.pem"));
+    bootconfig_hash_footer_cmd.AddParameter("--algorithm");
+    bootconfig_hash_footer_cmd.AddParameter("SHA256_RSA4096");
+    int success = bootconfig_hash_footer_cmd.Start().Wait();
+    if (success != 0) {
+      LOG(ERROR) << "Unable to run append hash footer. Exited with status "
+                 << success;
+      return false;
+    }
+    return true;
+  }
+
+  const CuttlefishConfig& config_;
+  const CuttlefishConfig::InstanceSpecific& instance_;
+};
+
+class GeneratePersistentVbmeta : public Feature {
+ public:
+  INJECT(GeneratePersistentVbmeta(
+      const CuttlefishConfig& config,
+      const CuttlefishConfig::InstanceSpecific& instance,
+      InitBootloaderEnvPartition& bootloader_env,
+      GeneratePersistentBootconfig& bootconfig))
+      : config_(config),
+        instance_(instance),
+        bootloader_env_(bootloader_env),
+        bootconfig_(bootconfig) {}
+
+  // Feature
+  std::string Name() const override {
+    return "GeneratePersistentVbmeta";
+  }
+  bool Enabled() const override {
+    return (!config_.protected_vm());
+  }
+
+ private:
+  std::unordered_set<Feature*> Dependencies() const override {
+    return {
+        static_cast<Feature*>(&bootloader_env_),
+        static_cast<Feature*>(&bootconfig_),
+    };
+  }
+
+  bool Setup() override {
+    auto avbtool_path = HostBinaryPath("avbtool");
+    Command vbmeta_cmd(avbtool_path);
+    vbmeta_cmd.AddParameter("make_vbmeta_image");
+    vbmeta_cmd.AddParameter("--output");
+    vbmeta_cmd.AddParameter(instance_.vbmeta_path());
+    vbmeta_cmd.AddParameter("--algorithm");
+    vbmeta_cmd.AddParameter("SHA256_RSA4096");
+    vbmeta_cmd.AddParameter("--key");
+    vbmeta_cmd.AddParameter(
+        DefaultHostArtifactsPath("etc/cvd_avb_testkey.pem"));
+
+    vbmeta_cmd.AddParameter("--chain_partition");
+    vbmeta_cmd.AddParameter("uboot_env:1:" +
+                            DefaultHostArtifactsPath("etc/cvd.avbpubkey"));
+
+    if (config_.bootconfig_supported()) {
+        vbmeta_cmd.AddParameter("--chain_partition");
+        vbmeta_cmd.AddParameter("bootconfig:2:" +
+                                DefaultHostArtifactsPath("etc/cvd.avbpubkey"));
+    }
+
+    bool success = vbmeta_cmd.Start().Wait();
+    if (success != 0) {
+      LOG(ERROR) << "Unable to create persistent vbmeta. Exited with status "
+                 << success;
+      return false;
+    }
+
+    if (FileSize(instance_.vbmeta_path()) > VBMETA_MAX_SIZE) {
+      LOG(ERROR) << "Generated vbmeta - " << instance_.vbmeta_path()
+                 << " is larger than the expected " << VBMETA_MAX_SIZE
+                 << ". Stopping.";
+      return false;
+    }
+    if (FileSize(instance_.vbmeta_path()) != VBMETA_MAX_SIZE) {
+      auto fd = SharedFD::Open(instance_.vbmeta_path(), O_RDWR);
+      if (!fd->IsOpen() || fd->Truncate(VBMETA_MAX_SIZE) != 0) {
+        LOG(ERROR) << "`truncate --size=" << VBMETA_MAX_SIZE << " "
+                   << instance_.vbmeta_path() << "` "
+                   << "failed: " << fd->StrError();
+        return false;
+      }
+    }
+    return true;
+  }
+
+  const CuttlefishConfig& config_;
+  const CuttlefishConfig::InstanceSpecific& instance_;
+  InitBootloaderEnvPartition& bootloader_env_;
+  GeneratePersistentBootconfig& bootconfig_;
+};
 
 class InitializeMetadataImage : public Feature {
  public:
@@ -549,6 +830,37 @@ class InitializeAccessKregistryImage : public Feature {
     if (!success) {
       LOG(ERROR) << "Failed to create access_kregistry_path \""
                  << instance_.access_kregistry_path() << "\"";
+      return false;
+    }
+    return true;
+  }
+
+  const CuttlefishConfig& config_;
+  const CuttlefishConfig::InstanceSpecific& instance_;
+};
+
+class InitializeHwcomposerPmemImage : public Feature {
+ public:
+  INJECT(InitializeHwcomposerPmemImage(
+      const CuttlefishConfig& config,
+      const CuttlefishConfig::InstanceSpecific& instance))
+      : config_(config), instance_(instance) {}
+
+  // Feature
+  std::string Name() const override { return "InitializeHwcomposerPmemImage"; }
+  bool Enabled() const override { return !config_.protected_vm(); }
+
+ private:
+  std::unordered_set<Feature*> Dependencies() const override { return {}; }
+  bool Setup() {
+    if (FileExists(instance_.hwcomposer_pmem_path())) {
+      return true;
+    }
+    bool success =
+        CreateBlankImage(instance_.hwcomposer_pmem_path(), 2 /* mb */, "none");
+    if (!success) {
+      LOG(ERROR) << "Failed to create hwcomposer pmem image \""
+                 << instance_.hwcomposer_pmem_path() << "\"";
       return false;
     }
     return true;
@@ -651,6 +963,101 @@ class InitializeFactoryResetProtected : public Feature {
   const CuttlefishConfig::InstanceSpecific& instance_;
 };
 
+class InitializeInstanceCompositeDisk : public Feature {
+ public:
+  INJECT(InitializeInstanceCompositeDisk(
+      const CuttlefishConfig& config,
+      const CuttlefishConfig::InstanceSpecific& instance,
+      InitializeFactoryResetProtected& frp,
+      GeneratePersistentVbmeta& vbmeta))
+      : config_(config),
+        instance_(instance),
+        frp_(frp),
+        vbmeta_(vbmeta) {}
+
+  std::string Name() const override {
+    return "InitializeInstanceCompositeDisk";
+  }
+  bool Enabled() const override { return true; }
+
+ private:
+  std::unordered_set<Feature*> Dependencies() const override {
+    return {
+        static_cast<Feature*>(&frp_),
+        static_cast<Feature*>(&vbmeta_),
+    };
+  }
+  bool Setup() override {
+    bool compositeMatchesDiskConfig = DoesCompositeMatchCurrentDiskConfig(
+        instance_.PerInstancePath("persistent_composite_disk_config.txt"),
+        persistent_composite_disk_config(config_, instance_));
+    bool oldCompositeDisk =
+        ShouldCreateCompositeDisk(instance_.persistent_composite_disk_path(),
+                                  persistent_composite_disk_config(config_, instance_));
+
+    if (!compositeMatchesDiskConfig || oldCompositeDisk) {
+      bool success = CreatePersistentCompositeDisk(config_, instance_);
+      if (!success) {
+        LOG(ERROR) << "Failed to create persistent composite disk";
+        return false;
+      }
+    }
+    return true;
+  }
+
+  const CuttlefishConfig& config_;
+  const CuttlefishConfig::InstanceSpecific& instance_;
+  InitializeFactoryResetProtected& frp_;
+  GeneratePersistentVbmeta& vbmeta_;
+};
+
+class VbmetaEnforceMinimumSize : public Feature {
+ public:
+  INJECT(VbmetaEnforceMinimumSize()) {}
+
+  std::string Name() const override { return "VbmetaEnforceMinimumSize"; }
+  bool Enabled() const override { return true; }
+
+ private:
+  std::unordered_set<Feature*> Dependencies() const override { return {}; }
+  bool Setup() override {
+    // libavb expects to be able to read the maximum vbmeta size, so we must
+    // provide a partition which matches this or the read will fail
+    for (const auto& vbmeta_image :
+         {FLAGS_vbmeta_image, FLAGS_vbmeta_system_image}) {
+      if (FileSize(vbmeta_image) != VBMETA_MAX_SIZE) {
+        auto fd = SharedFD::Open(vbmeta_image, O_RDWR);
+        bool success = fd->Truncate(VBMETA_MAX_SIZE) == 0;
+        if (!success) {
+          LOG(ERROR) << "`truncate --size=" << VBMETA_MAX_SIZE << " "
+                     << vbmeta_image << "` "
+                     << "failed: " << fd->StrError();
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+};
+
+class BootloaderPresentCheck : public Feature {
+ public:
+  INJECT(BootloaderPresentCheck()) {}
+
+  std::string Name() const override { return "BootloaderPresentCheck"; }
+  bool Enabled() const override { return true; }
+
+ private:
+  std::unordered_set<Feature*> Dependencies() const override { return {}; }
+  bool Setup() override {
+    if (!FileHasContent(FLAGS_bootloader)) {
+      LOG(ERROR) << "File not found: " << FLAGS_bootloader;
+      return false;
+    }
+    return true;
+  }
+};
+
 static fruit::Component<> DiskChangesComponent(const FetcherConfig* fetcher,
                                                const CuttlefishConfig* config) {
   return fruit::createComponent()
@@ -658,10 +1065,18 @@ static fruit::Component<> DiskChangesComponent(const FetcherConfig* fetcher,
       .bindInstance(*config)
       .addMultibinding<Feature, InitializeMetadataImage>()
       .addMultibinding<Feature, BootImageRepacker>()
+      .addMultibinding<Feature, VbmetaEnforceMinimumSize>()
+      .addMultibinding<Feature, BootloaderPresentCheck>()
+      .addMultibinding<Feature, Gem5ImageUnpacker>()
       .install(FixedMiscImagePathComponent, &FLAGS_misc_image)
       .install(InitializeMiscImageComponent)
       .install(FixedDataImagePathComponent, &FLAGS_data_image)
-      .install(InitializeDataImageComponent);
+      .install(InitializeDataImageComponent)
+      // Create esp if necessary
+      .install(InitializeEspImageComponent, &FLAGS_otheros_esp_image,
+               &FLAGS_otheros_kernel_path, &FLAGS_otheros_initramfs_path,
+               &FLAGS_otheros_root_image)
+      .install(SuperImageRebuilderComponent, &FLAGS_super_image);
 }
 
 static fruit::Component<> DiskChangesPerInstanceComponent(
@@ -672,9 +1087,13 @@ static fruit::Component<> DiskChangesPerInstanceComponent(
       .bindInstance(*config)
       .bindInstance(*instance)
       .addMultibinding<Feature, InitializeAccessKregistryImage>()
+      .addMultibinding<Feature, InitializeHwcomposerPmemImage>()
       .addMultibinding<Feature, InitializePstore>()
       .addMultibinding<Feature, InitializeSdCard>()
       .addMultibinding<Feature, InitializeFactoryResetProtected>()
+      .addMultibinding<Feature, GeneratePersistentBootconfig>()
+      .addMultibinding<Feature, GeneratePersistentVbmeta>()
+      .addMultibinding<Feature, InitializeInstanceCompositeDisk>()
       .install(InitBootloaderEnvPartitionComponent);
 }
 
@@ -687,13 +1106,6 @@ void CreateDynamicDiskFiles(const FetcherConfig& fetcher_config,
   const auto& features = injector.getMultibindings<Feature>();
   CHECK(Feature::RunSetup(features)) << "Failed to run feature setup.";
 
-  // Create esp if necessary
-  if (!FLAGS_otheros_root_image.empty()) {
-    CHECK(InitializeEspImage(FLAGS_otheros_esp_image, FLAGS_otheros_kernel_path,
-                             FLAGS_otheros_initramfs_path))
-        << "Failed to create esp image";
-  }
-
   for (const auto& instance : config.Instances()) {
     fruit::Injector<> instance_injector(DiskChangesPerInstanceComponent,
                                         &fetcher_config, &config, &instance);
@@ -701,49 +1113,6 @@ void CreateDynamicDiskFiles(const FetcherConfig& fetcher_config,
         instance_injector.getMultibindings<Feature>();
     CHECK(Feature::RunSetup(instance_features))
         << "Failed to run instance feature setup.";
-  }
-
-  // If we are booting a protected VM, for now, assume we want a super minimal
-  // environment with no userdata encryption, limited debug, no FRP emulation, a
-  // static env for the bootloader, no SD-Card and no resume-on-reboot HAL
-  // support.
-  if (!FLAGS_protected_vm) {
-    for (const auto& instance : config.Instances()) {
-      GeneratePersistentBootconfig(config, instance);
-    }
-  }
-
-  for (const auto& instance : config.Instances()) {
-    bool compositeMatchesDiskConfig = DoesCompositeMatchCurrentDiskConfig(
-        instance.PerInstancePath("persistent_composite_disk_config.txt"),
-        persistent_composite_disk_config(instance));
-    bool oldCompositeDisk =
-        ShouldCreateCompositeDisk(instance.persistent_composite_disk_path(),
-                                  persistent_composite_disk_config(instance));
-
-    if (!compositeMatchesDiskConfig || oldCompositeDisk) {
-      CHECK(CreatePersistentCompositeDisk(config, instance))
-          << "Failed to create persistent composite disk";
-    }
-  }
-
-  // libavb expects to be able to read the maximum vbmeta size, so we must
-  // provide a partition which matches this or the read will fail
-  for (const auto& vbmeta_image : { FLAGS_vbmeta_image, FLAGS_vbmeta_system_image }) {
-    if (FileSize(vbmeta_image) != VBMETA_MAX_SIZE) {
-      auto fd = SharedFD::Open(vbmeta_image, O_RDWR);
-      CHECK(fd->Truncate(VBMETA_MAX_SIZE) == 0)
-        << "`truncate --size=" << VBMETA_MAX_SIZE << " " << vbmeta_image << "` "
-        << "failed: " << fd->StrError();
-    }
-  }
-
-  CHECK(FileHasContent(FLAGS_bootloader))
-      << "File not found: " << FLAGS_bootloader;
-
-  if (SuperImageNeedsRebuilding(fetcher_config, config)) {
-    bool success = RebuildSuperImage(fetcher_config, config, FLAGS_super_image);
-    CHECK(success) << "Super image rebuilding requested but could not be completed.";
   }
 
   bool oldOsCompositeDisk = ShouldCreateOsCompositeDisk(config);
@@ -763,6 +1132,9 @@ void CreateDynamicDiskFiles(const FetcherConfig& fetcher_config,
       }
       if (FileExists(instance.access_kregistry_path())) {
         CreateBlankImage(instance.access_kregistry_path(), 2 /* mb */, "none");
+      }
+      if (FileExists(instance.hwcomposer_pmem_path())) {
+        CreateBlankImage(instance.hwcomposer_pmem_path(), 2 /* mb */, "none");
       }
       if (FileExists(instance.pstore_path())) {
         CreateBlankImage(instance.pstore_path(), 2 /* mb */, "none");
@@ -786,6 +1158,14 @@ void CreateDynamicDiskFiles(const FetcherConfig& fetcher_config,
       if (!file.empty()) {
         CHECK(FileHasContent(file)) << "File not found: " << file;
       }
+    }
+    // Gem5 Simulate per-instance what the bootloader would usually do
+    // Since on other devices this runs every time, just do it here every time
+    if (config.vm_manager() == Gem5Manager::name()) {
+      RepackGem5BootImage(
+          instance.PerInstancePath("initrd.img"),
+          instance.persistent_bootconfig_path(),
+          config.assembly_dir());
     }
   }
 }

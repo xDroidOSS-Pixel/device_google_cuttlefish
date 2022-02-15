@@ -23,6 +23,7 @@ message Status {
   enum Code {
     OK = 0;
     FAILED_PRECONDITION = 9;
+    INTERNAL = 13;
   }
 
   Code code = 1;
@@ -52,6 +53,7 @@ message Response {
 message Version {
   int32 major = 1;
   int32 minor = 2;
+  string build = 3;
 }
 
 message VersionRequest {}

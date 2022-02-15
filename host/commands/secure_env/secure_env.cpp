@@ -25,10 +25,12 @@
 #include <tss2/tss2_rc.h>
 
 #include "common/libs/fs/shared_fd.h"
+#include "common/libs/security/confui_sign.h"
 #include "common/libs/security/gatekeeper_channel.h"
 #include "common/libs/security/keymaster_channel.h"
 #include "host/commands/kernel_log_monitor/kernel_log_server.h"
 #include "host/commands/kernel_log_monitor/utils.h"
+#include "host/commands/secure_env/confui_sign_server.h"
 #include "host/commands/secure_env/device_tpm.h"
 #include "host/commands/secure_env/fragile_tpm_storage.h"
 #include "host/commands/secure_env/gatekeeper_responder.h"
@@ -43,6 +45,7 @@
 #include "host/commands/secure_env/tpm_resource_manager.h"
 #include "host/libs/config/logging.h"
 
+DEFINE_int32(confui_server_fd, -1, "A named socket to serve confirmation UI");
 DEFINE_int32(keymaster_fd_in, -1, "A pipe for keymaster communication");
 DEFINE_int32(keymaster_fd_out, -1, "A pipe for keymaster communication");
 DEFINE_int32(gatekeeper_fd_in, -1, "A pipe for gatekeeper communication");
@@ -110,7 +113,34 @@ std::thread StartKernelEventMonitor(SharedFD kernel_events_fd) {
   });
 }
 
-fruit::Component<TpmResourceManager> SecureEnvComponent() {
+fruit::Component<fruit::Required<gatekeeper::SoftGateKeeper, TpmGatekeeper,
+                                 TpmResourceManager>,
+                 gatekeeper::GateKeeper, keymaster::KeymasterEnforcement>
+ChooseGatekeeperComponent() {
+  if (FLAGS_gatekeeper_impl == "software") {
+    return fruit::createComponent()
+        .bind<gatekeeper::GateKeeper, gatekeeper::SoftGateKeeper>()
+        .registerProvider([]() -> keymaster::KeymasterEnforcement* {
+          return new keymaster::SoftKeymasterEnforcement(64, 64);
+        });
+  } else if (FLAGS_gatekeeper_impl == "tpm") {
+    return fruit::createComponent()
+        .bind<gatekeeper::GateKeeper, TpmGatekeeper>()
+        .registerProvider(
+            [](TpmResourceManager& resource_manager,
+               TpmGatekeeper& gatekeeper) -> keymaster::KeymasterEnforcement* {
+              return new TpmKeymasterEnforcement(resource_manager, gatekeeper);
+            });
+  } else {
+    LOG(FATAL) << "Invalid gatekeeper implementation: "
+               << FLAGS_gatekeeper_impl;
+    abort();
+  }
+}
+
+fruit::Component<TpmResourceManager, gatekeeper::GateKeeper,
+                 keymaster::KeymasterEnforcement>
+SecureEnvComponent() {
   return fruit::createComponent()
       .registerProvider([]() -> Tpm* {  // fruit will take ownership
         if (FLAGS_tpm_impl == "in_memory") {
@@ -141,7 +171,22 @@ fruit::Component<TpmResourceManager> SecureEnvComponent() {
           [](std::unique_ptr<ESYS_CONTEXT, void (*)(ESYS_CONTEXT*)>& esys) {
             return new TpmResourceManager(
                 esys.get());  // fruit will take ownership
-          });
+          })
+      .registerProvider([](TpmResourceManager& resource_manager) {
+        return new FragileTpmStorage(resource_manager, "gatekeeper_secure");
+      })
+      .registerProvider([](TpmResourceManager& resource_manager) {
+        return new InsecureFallbackStorage(resource_manager,
+                                           "gatekeeper_insecure");
+      })
+      .registerProvider([](TpmResourceManager& resource_manager,
+                           FragileTpmStorage& secure_storage,
+                           InsecureFallbackStorage& insecure_storage) {
+        return new TpmGatekeeper(resource_manager, secure_storage,
+                                 insecure_storage);
+      })
+      .registerProvider([]() { return new gatekeeper::SoftGateKeeper(); })
+      .install(ChooseGatekeeperComponent);
 }
 
 }  // namespace
@@ -151,34 +196,19 @@ int SecureEnvMain(int argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   keymaster::SoftKeymasterLogger km_logger;
 
-  fruit::Injector<TpmResourceManager> injector(SecureEnvComponent);
+  fruit::Injector<TpmResourceManager, gatekeeper::GateKeeper,
+                  keymaster::KeymasterEnforcement>
+      injector(SecureEnvComponent);
   TpmResourceManager* resource_manager = injector.get<TpmResourceManager*>();
-
-  std::unique_ptr<GatekeeperStorage> secure_storage;
-  std::unique_ptr<GatekeeperStorage> insecure_storage;
-  std::unique_ptr<gatekeeper::GateKeeper> gatekeeper;
-  std::unique_ptr<keymaster::KeymasterEnforcement> keymaster_enforcement;
-  if (FLAGS_gatekeeper_impl == "software") {
-    gatekeeper.reset(new gatekeeper::SoftGateKeeper);
-    keymaster_enforcement.reset(
-        new keymaster::SoftKeymasterEnforcement(64, 64));
-  } else if (FLAGS_gatekeeper_impl == "tpm") {
-    secure_storage.reset(
-        new FragileTpmStorage(*resource_manager, "gatekeeper_secure"));
-    insecure_storage.reset(
-        new InsecureFallbackStorage(*resource_manager, "gatekeeper_insecure"));
-    TpmGatekeeper* tpm_gatekeeper =
-        new TpmGatekeeper(*resource_manager, *secure_storage, *insecure_storage);
-    gatekeeper.reset(tpm_gatekeeper);
-    keymaster_enforcement.reset(
-        new TpmKeymasterEnforcement(*resource_manager, *tpm_gatekeeper));
-  }
+  gatekeeper::GateKeeper* gatekeeper = injector.get<gatekeeper::GateKeeper*>();
+  keymaster::KeymasterEnforcement* keymaster_enforcement =
+      injector.get<keymaster::KeymasterEnforcement*>();
 
   std::unique_ptr<keymaster::KeymasterContext> keymaster_context;
   if (FLAGS_keymint_impl == "software") {
     // TODO: See if this is the right KM version.
     keymaster_context.reset(new keymaster::PureSoftKeymasterContext(
-        keymaster::KmVersion::KEYMINT_1, KM_SECURITY_LEVEL_SOFTWARE));
+        keymaster::KmVersion::KEYMINT_2, KM_SECURITY_LEVEL_SOFTWARE));
   } else if (FLAGS_keymint_impl == "tpm") {
     keymaster_context.reset(
         new TpmKeymasterContext(*resource_manager, *keymaster_enforcement));
@@ -190,9 +220,10 @@ int SecureEnvMain(int argc, char** argv) {
   // taking ownership.
   keymaster::AndroidKeymaster keymaster{
       new ProxyKeymasterContext(*keymaster_context), kOperationTableSize,
-      keymaster::MessageVersion(keymaster::KmVersion::KEYMINT_1,
+      keymaster::MessageVersion(keymaster::KmVersion::KEYMINT_2,
                                 0 /* km_date */)};
 
+  auto confui_server_fd = DupFdFlag(FLAGS_confui_server_fd);
   auto keymaster_in = DupFdFlag(FLAGS_keymaster_fd_in);
   auto keymaster_out = DupFdFlag(FLAGS_keymaster_fd_out);
   auto gatekeeper_in = DupFdFlag(FLAGS_gatekeeper_fd_in);
@@ -223,6 +254,11 @@ int SecureEnvMain(int argc, char** argv) {
     }
   });
 
+  threads.emplace_back([confui_server_fd, resource_manager]() {
+    ConfUiSignServer confui_sign_server(*resource_manager, confui_server_fd);
+    // no return, infinite loop
+    confui_sign_server.MainLoop();
+  });
   threads.emplace_back(StartKernelEventMonitor(kernel_events_fd));
 
   for (auto& t : threads) {

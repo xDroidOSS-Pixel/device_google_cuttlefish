@@ -107,6 +107,12 @@ class CuttlefishConfig {
   std::string hwcomposer() const;
   void set_hwcomposer(const std::string&);
 
+  void set_enable_gpu_udmabuf(const bool enable_gpu_udmabuf);
+  bool enable_gpu_udmabuf() const;
+
+  void set_enable_gpu_angle(const bool enable_gpu_angle);
+  bool enable_gpu_angle() const;
+
   int cpus() const;
   void set_cpus(int cpus);
 
@@ -144,8 +150,8 @@ class CuttlefishConfig {
   void set_crosvm_binary(const std::string& crosvm_binary);
   std::string crosvm_binary() const;
 
-  void set_tpm_device(const std::string& tpm_device);
-  std::string tpm_device() const;
+  void set_gem5_binary_dir(const std::string& gem5_binary_dir);
+  std::string gem5_binary_dir() const;
 
   void set_enable_sandbox(const bool enable_sandbox);
   bool enable_sandbox() const;
@@ -194,9 +200,6 @@ class CuttlefishConfig {
 
   void set_guest_enforce_security(bool guest_enforce_security);
   bool guest_enforce_security() const;
-
-  void set_guest_audit_security(bool guest_audit_security);
-  bool guest_audit_security() const;
 
   void set_enable_host_bluetooth(bool enable_host_bluetooth);
   bool enable_host_bluetooth() const;
@@ -307,6 +310,22 @@ class CuttlefishConfig {
   void set_wmediumd_config(const std::string& path);
   std::string wmediumd_config() const;
 
+  void set_rootcanal_hci_port(int rootcanal_hci_port);
+  int rootcanal_hci_port() const;
+
+  void set_rootcanal_link_port(int rootcanal_link_port);
+  int rootcanal_link_port() const;
+
+  void set_rootcanal_test_port(int rootcanal_test_port);
+  int rootcanal_test_port() const;
+
+  void set_rootcanal_config_file(const std::string& rootcanal_config_file);
+  std::string rootcanal_config_file() const;
+
+  void set_rootcanal_default_commands_file(
+      const std::string& rootcanal_default_commands_file);
+  std::string rootcanal_default_commands_file() const;
+
   void set_record_screen(bool record_screen);
   bool record_screen() const;
 
@@ -386,14 +405,8 @@ class CuttlefishConfig {
     // Port number to connect to the gnss grpc proxy server on the host
     int gnss_grpc_proxy_server_port() const;
     std::string adb_ip_and_port() const;
-    // Port number to connect to the root-canal on the host
-    int rootcanal_hci_port() const;
-    int rootcanal_link_port() const;
-    int rootcanal_test_port() const;
     // Port number to connect to the camera hal on the guest
     int camera_server_port() const;
-    std::string rootcanal_config_file() const;
-    std::string rootcanal_default_commands_file() const;
 
     std::string adb_device_name() const;
     std::string gnss_file_path() const;
@@ -426,6 +439,8 @@ class CuttlefishConfig {
     int confui_host_vsock_port() const;
 
     std::string access_kregistry_path() const;
+
+    std::string hwcomposer_pmem_path() const;
 
     std::string pstore_path() const;
 
@@ -467,8 +482,15 @@ class CuttlefishConfig {
     // Whether this instance should start the webrtc signaling server
     bool start_webrtc_sig_server() const;
 
+    // Whether to start a reverse proxy to the webrtc signaling server already
+    // running in the host
+    bool start_webrtc_sig_server_proxy() const;
+
     // Whether this instance should start the wmediumd process
     bool start_wmediumd() const;
+
+    // Whether this instance should start a rootcanal instance
+    bool start_rootcanal() const;
 
     // Whether this instance should start an ap instance
     bool start_ap() const;
@@ -479,6 +501,8 @@ class CuttlefishConfig {
     std::string factory_reset_protected_path() const;
 
     std::string persistent_bootconfig_path() const;
+
+    std::string vbmeta_path() const;
 
     std::string id() const;
   };
@@ -508,13 +532,7 @@ class CuttlefishConfig {
     void set_modem_simulator_host_id(int modem_simulator_id);
     void set_adb_ip_and_port(const std::string& ip_port);
     void set_confui_host_vsock_port(int confui_host_port);
-    void set_rootcanal_hci_port(int rootcanal_hci_port);
-    void set_rootcanal_link_port(int rootcanal_link_port);
-    void set_rootcanal_test_port(int rootcanal_test_port);
     void set_camera_server_port(int camera_server_port);
-    void set_rootcanal_config_file(const std::string& rootcanal_config_file);
-    void set_rootcanal_default_commands_file(
-        const std::string& rootcanal_default_commands_file);
     void set_mobile_bridge_name(const std::string& mobile_bridge_name);
     void set_mobile_tap_name(const std::string& mobile_tap_name);
     void set_wifi_tap_name(const std::string& wifi_tap_name);
@@ -528,7 +546,9 @@ class CuttlefishConfig {
     void set_virtual_disk_paths(const std::vector<std::string>& disk_paths);
     void set_webrtc_device_id(const std::string& id);
     void set_start_webrtc_signaling_server(bool start);
+    void set_start_webrtc_sig_server_proxy(bool start);
     void set_start_wmediumd(bool start);
+    void set_start_rootcanal(bool start);
     void set_start_ap(bool start);
     // Wifi MAC address inside the guest
     void set_wifi_mac_prefix(const int wifi_mac_prefix);
@@ -593,6 +613,6 @@ extern const char* const kGpuModeGfxStream;
 
 // HwComposer modes
 extern const char* const kHwComposerAuto;
-extern const char* const kHwComposerDrmMinigbm;
+extern const char* const kHwComposerDrm;
 extern const char* const kHwComposerRanchu;
 }  // namespace cuttlefish

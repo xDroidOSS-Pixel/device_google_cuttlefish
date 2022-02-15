@@ -62,8 +62,8 @@ std::vector<Command> LaunchCustomActionServers(
 
       // Launch the action server, providing its socket pair fd as the only
       // argument.
-      std::string binary = "bin/" + *(custom_action.server);
-      Command command(DefaultHostArtifactsPath(binary));
+      auto binary = HostBinaryPath(*(custom_action.server));
+      Command command(binary);
       command.AddParameter(action_server_socket);
       commands.emplace_back(std::move(command));
 
@@ -211,6 +211,17 @@ class WebRtcServer : public virtual CommandSource,
       }
       sig_server.AddParameter("-http_server_port=", config_.sig_server_port());
       commands.emplace_back(std::move(sig_server));
+    }
+
+    if (instance_.start_webrtc_sig_server_proxy()) {
+      Command sig_proxy(WebRtcSigServerProxyBinary());
+      sig_proxy.AddParameter("-use_secure_http=",
+                             config_.sig_server_secure() ? "true" : "false");
+      if (!config_.webrtc_certs_dir().empty()) {
+        sig_proxy.AddParameter("-certs_dir=", config_.webrtc_certs_dir());
+      }
+      sig_proxy.AddParameter("-http_server_port=", config_.sig_server_port());
+      commands.emplace_back(std::move(sig_proxy));
     }
 
     auto stopper = [host_socket = std::move(host_socket_)](Subprocess* proc) {

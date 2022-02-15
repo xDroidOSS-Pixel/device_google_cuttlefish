@@ -63,6 +63,7 @@ apex {
     prebuilts: [
         "android.hardware.wifi.passpoint.prebuilt.xml",
     ],
+    multi_install_skip_symbol_files: true,
 }
 
 apex {

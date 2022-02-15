@@ -26,6 +26,10 @@
         <install-in user-type="FULL" />
         <install-in user-type="SYSTEM" />
     </install-in-user-type>
+    <install-in-user-type package="com.android.localtransport">
+        <install-in user-type="FULL" />
+        <install-in user-type="SYSTEM" />
+    </install-in-user-type>
     <install-in-user-type package="com.android.car.hvac">
         <install-in user-type="FULL" />
         <install-in user-type="SYSTEM" />
@@ -90,7 +94,28 @@
     <install-in-user-type package="com.android.cameraextensions">
         <install-in user-type="SYSTEM" />
         <install-in user-type="FULL" />
+   </install-in-user-type>
+   <install-in-user-type package="com.android.car.messenger">
+	<install-in user-type="FULL" />
+        <install-in user-type="SYSTEM" />
     </install-in-user-type>
+    <install-in-user-type package="com.android.apps.tag">
+        <install-in user-type="FULL" />
+        <install-in user-type="SYSTEM" />
+    </install-in-user-type>
+    <install-in-user-type package="com.android.imsserviceentitlement">
+        <install-in user-type="FULL" />
+        <install-in user-type="SYSTEM" />
+    </install-in-user-type>
+    <install-in-user-type package="com.android.cellbroadcastservice">
+        <install-in user-type="FULL" />
+        <install-in user-type="SYSTEM" />
+    </install-in-user-type>
+    <install-in-user-type package="com.android.cellbroadcastreceiver.module">
+        <install-in user-type="FULL" />
+        <install-in user-type="SYSTEM" />
+    </install-in-user-type>
+
 
 <!--
   Apps that do need to run on SYSTEM and evaluated by package owner.
@@ -114,9 +139,6 @@
     <install-in-user-type package="com.android.dynsystem">
         <install-in user-type="FULL" />
     </install-in-user-type>
-    <install-in-user-type package="com.android.localtransport">
-        <install-in user-type="FULL" />
-    </install-in-user-type>
     <install-in-user-type package="com.android.mms.service">
         <install-in user-type="FULL" />
     </install-in-user-type>
@@ -130,9 +152,6 @@
         <install-in user-type="FULL" />
     </install-in-user-type>
     <install-in-user-type package="com.android.car.radio">
-        <install-in user-type="FULL" />
-    </install-in-user-type>
-    <install-in-user-type package="com.android.car.messenger">
         <install-in user-type="FULL" />
     </install-in-user-type>
     <install-in-user-type package="com.android.car.media.localmediaplayer">

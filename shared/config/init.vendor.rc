@@ -1,8 +1,6 @@
 on early-init
 #    loglevel 8
 
-    mount securityfs securityfs /sys/kernel/security
-
     setprop ro.sf.lcd_density ${ro.boot.lcd_density}
     setprop ro.hardware.egl ${ro.boot.hardware.egl}
     setprop debug.sf.vsync_reactor_ignore_present_fences true
@@ -75,8 +73,11 @@ on late-fs
     write /dev/kmsg "GUEST_BUILD_FINGERPRINT: ${ro.build.fingerprint}"
 
 on post-fs-data && property:ro.vendor.wifi_impl=mac8011_hwsim_virtio
+    mkdir /data/vendor/wifi 0770 wifi wifi
+    mkdir /data/vendor/wifi/hostapd 0770 wifi wifi
+    mkdir /data/vendor/wifi/hostapd/sockets 0770 wifi wifi
     setprop vold.post_fs_data_done 1
-    start wifi-net-sh
+    start init_wifi_sh
 
 on boot
     chmod 0660 /dev/cpuctl
@@ -86,13 +87,7 @@ on boot
     start socket_vsock_proxy
     setprop ro.hardware.audio.primary goldfish
     symlink /dev/hvc6 /dev/gnss0
-
-service wifi-net-sh /vendor/bin/init.wifi.sh
-    class late_start
-    user root
-    group root wakelock wifi
-    oneshot
-    disabled    # Started on post-fs-data
+    symlink /dev/hvc7 /dev/gnss1
 
 on property:sys.boot_completed=1
     trigger sys-boot-completed-set

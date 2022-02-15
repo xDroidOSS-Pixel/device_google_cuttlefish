@@ -152,11 +152,9 @@ class LogTeeCreator {
     cmd.RedirectStdIO(Subprocess::StdIOChannel::kStdOut, logs);
     cmd.RedirectStdIO(Subprocess::StdIOChannel::kStdErr, logs);
 
-    Command log_tee_cmd(HostBinaryPath("log_tee"));
-    log_tee_cmd.AddParameter("--process_name=", process_name);
-    log_tee_cmd.AddParameter("--log_fd_in=", logs);
-
-    return log_tee_cmd;
+    return Command(HostBinaryPath("log_tee"))
+        .AddParameter("--process_name=", process_name)
+        .AddParameter("--log_fd_in=", logs);
   }
 
  private:
@@ -178,17 +176,17 @@ class RootCanal : public CommandSource {
     Command command(RootCanalBinary());
 
     // Test port
-    command.AddParameter(instance_.rootcanal_test_port());
+    command.AddParameter(config_.rootcanal_test_port());
     // HCI server port
-    command.AddParameter(instance_.rootcanal_hci_port());
+    command.AddParameter(config_.rootcanal_hci_port());
     // Link server port
-    command.AddParameter(instance_.rootcanal_link_port());
+    command.AddParameter(config_.rootcanal_link_port());
     // Bluetooth controller properties file
     command.AddParameter("--controller_properties_file=",
-                         instance_.rootcanal_config_file());
+                         config_.rootcanal_config_file());
     // Default commands file
     command.AddParameter("--default_commands_file=",
-                         instance_.rootcanal_default_commands_file());
+                         config_.rootcanal_default_commands_file());
 
     std::vector<Command> commands;
     commands.emplace_back(log_tee_.CreateLogTee(command, "rootcanal"));
@@ -198,7 +196,9 @@ class RootCanal : public CommandSource {
 
   // Feature
   std::string Name() const override { return "RootCanal"; }
-  bool Enabled() const override { return config_.enable_host_bluetooth(); }
+  bool Enabled() const override {
+    return config_.enable_host_bluetooth() && instance_.start_rootcanal();
+  }
 
  private:
   std::unordered_set<Feature*> Dependencies() const override { return {}; }
@@ -220,9 +220,8 @@ class LogcatReceiver : public CommandSource, public DiagnosticInformation {
 
   // CommandSource
   std::vector<Command> Commands() override {
-    Command command(LogcatReceiverBinary());
-    command.AddParameter("-log_pipe_fd=", pipe_);
-    return single_element_emplace(std::move(command));
+    return single_element_emplace(
+        Command(LogcatReceiverBinary()).AddParameter("-log_pipe_fd=", pipe_));
   }
 
   // Feature
@@ -261,9 +260,8 @@ class ConfigServer : public CommandSource {
 
   // CommandSource
   std::vector<Command> Commands() override {
-    Command cmd(ConfigServerBinary());
-    cmd.AddParameter("-server_fd=", socket_);
-    return single_element_emplace(std::move(cmd));
+    return single_element_emplace(
+        Command(ConfigServerBinary()).AddParameter("-server_fd=", socket_));
   }
 
   // Feature
@@ -295,10 +293,10 @@ class TombstoneReceiver : public CommandSource {
 
   // CommandSource
   std::vector<Command> Commands() override {
-    Command cmd(TombstoneReceiverBinary());
-    cmd.AddParameter("-server_fd=", socket_);
-    cmd.AddParameter("-tombstone_dir=", tombstone_dir_);
-    return single_element_emplace(std::move(cmd));
+    return single_element_emplace(
+        Command(TombstoneReceiverBinary())
+            .AddParameter("-server_fd=", socket_)
+            .AddParameter("-tombstone_dir=", tombstone_dir_));
   }
 
   // Feature
@@ -395,6 +393,8 @@ class GnssGrpcProxyServer : public CommandSource {
     std::vector<std::string> fifo_paths = {
         instance_.PerInstanceInternalPath("gnsshvc_fifo_vm.in"),
         instance_.PerInstanceInternalPath("gnsshvc_fifo_vm.out"),
+        instance_.PerInstanceInternalPath("locationhvc_fifo_vm.in"),
+        instance_.PerInstanceInternalPath("locationhvc_fifo_vm.out"),
     };
     for (const auto& path : fifo_paths) {
       unlink(path.c_str());
@@ -430,12 +430,12 @@ class BluetoothConnector : public CommandSource {
 
   // CommandSource
   std::vector<Command> Commands() override {
-    Command command(DefaultHostArtifactsPath("bin/bt_connector"));
+    Command command(HostBinaryPath("bt_connector"));
     command.AddParameter("-bt_out=", fifos_[0]);
     command.AddParameter("-bt_in=", fifos_[1]);
-    command.AddParameter("-hci_port=", instance_.rootcanal_hci_port());
-    command.AddParameter("-link_port=", instance_.rootcanal_link_port());
-    command.AddParameter("-test_port=", instance_.rootcanal_test_port());
+    command.AddParameter("-hci_port=", config_.rootcanal_hci_port());
+    command.AddParameter("-link_port=", config_.rootcanal_link_port());
+    command.AddParameter("-test_port=", config_.rootcanal_test_port());
     return single_element_emplace(std::move(command));
   }
 
@@ -484,6 +484,7 @@ class SecureEnvironment : public CommandSource {
   // CommandSource
   std::vector<Command> Commands() override {
     Command command(HostBinaryPath("secure_env"));
+    command.AddParameter("-confui_server_fd=", confui_server_fd_);
     command.AddParameter("-keymaster_fd_out=", fifos_[0]);
     command.AddParameter("-keymaster_fd_in=", fifos_[1]);
     command.AddParameter("-gatekeeper_fd_out=", fifos_[2]);
@@ -531,6 +532,15 @@ class SecureEnvironment : public CommandSource {
       fifos_.push_back(fd);
     }
 
+    auto confui_socket_path =
+        instance_.PerInstanceInternalPath("confui_secure_env_vm.sock");
+    confui_server_fd_ = SharedFD::SocketLocalServer(confui_socket_path, false,
+                                                    SOCK_STREAM, 0600);
+    if (!confui_server_fd_->IsOpen()) {
+      LOG(ERROR) << "Could not open " << confui_socket_path << ": "
+                 << confui_server_fd_->StrError();
+      return false;
+    }
     kernel_log_pipe_ = kernel_log_pipe_provider_.KernelLogPipe();
 
     return true;
@@ -538,6 +548,7 @@ class SecureEnvironment : public CommandSource {
 
   const CuttlefishConfig& config_;
   const CuttlefishConfig::InstanceSpecific& instance_;
+  SharedFD confui_server_fd_;
   std::vector<SharedFD> fifos_;
   KernelLogPipeProvider& kernel_log_pipe_provider_;
   SharedFD kernel_log_pipe_;
@@ -750,7 +761,7 @@ class OpenWrt : public CommandSource {
 
   // CommandSource
   std::vector<Command> Commands() override {
-    constexpr auto crosvm_for_ap_socket = "crosvm_for_ap_control.sock";
+    constexpr auto crosvm_for_ap_socket = "ap_control.sock";
 
     CrosvmBuilder ap_cmd;
     ap_cmd.SetBinary(config_.crosvm_binary());
@@ -793,7 +804,7 @@ class OpenWrt : public CommandSource {
     ap_cmd.Cmd().AddParameter("--params=\"root=" + config_.ap_image_dev_path() +
                               "\"");
 
-    auto kernel_logs_path = instance_.PerInstancePath("crosvm_openwrt.log");
+    auto kernel_logs_path = instance_.PerInstanceLogPath("crosvm_openwrt.log");
     ap_cmd.AddSerialConsoleReadOnly(kernel_logs_path);
 
     ap_cmd.Cmd().AddParameter(config_.ap_kernel_image());

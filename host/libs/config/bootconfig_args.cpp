@@ -78,8 +78,7 @@ std::vector<std::string> BootconfigArgsFromConfig(
   auto vmm = vm_manager::GetVmManager(config.vm_manager(), config.target_arch());
   bootconfig_args.push_back(
       vmm->ConfigureBootDevices(instance.virtual_disk_paths().size()));
-  AppendVector(&bootconfig_args, vmm->ConfigureGraphics(config.gpu_mode(),
-      config.hwcomposer()));
+  AppendVector(&bootconfig_args, vmm->ConfigureGraphics(config));
 
   bootconfig_args.push_back(
       concat("androidboot.serialno=", instance.serial_number()));
@@ -165,6 +164,16 @@ std::vector<std::string> BootconfigArgsFromConfig(
   // set a large timeout multiplier.
   if (!IsHostCompatible(config.target_arch())) {
     bootconfig_args.push_back("androidboot.hw_timeout_multiplier=50");
+  }
+
+  // TODO(b/217564326): improve this checks for a hypervisor in the VM.
+  if (config.target_arch() == Arch::X86 ||
+      config.target_arch() == Arch::X86_64) {
+    bootconfig_args.push_back(
+        concat("androidboot.hypervisor.version=cf-", config.vm_manager()));
+    bootconfig_args.push_back("androidboot.hypervisor.vm.supported=1");
+    bootconfig_args.push_back(
+        "androidboot.hypervisor.protected_vm.supported=0");
   }
 
   AppendVector(&bootconfig_args, config.extra_bootconfig_args());

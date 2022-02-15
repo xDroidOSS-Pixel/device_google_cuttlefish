@@ -124,8 +124,8 @@ bool QemuManager::IsSupported() {
 }
 
 std::vector<std::string> QemuManager::ConfigureGraphics(
-    const std::string& gpu_mode, const std::string& hwcomposer) {
-  if (gpu_mode == kGpuModeGuestSwiftshader) {
+    const CuttlefishConfig& config) {
+  if (config.gpu_mode() == kGpuModeGuestSwiftshader) {
     // Override the default HAL search paths in all cases. We do this because
     // the HAL search path allows for fallbacks, and fallbacks in conjunction
     // with properities lead to non-deterministic behavior while loading the
@@ -133,17 +133,17 @@ std::vector<std::string> QemuManager::ConfigureGraphics(
     return {
         "androidboot.cpuvulkan.version=" + std::to_string(VK_API_VERSION_1_1),
         "androidboot.hardware.gralloc=minigbm",
-        "androidboot.hardware.hwcomposer=" + hwcomposer,
+        "androidboot.hardware.hwcomposer=" + config.hwcomposer(),
         "androidboot.hardware.egl=angle",
         "androidboot.hardware.vulkan=pastel",
     };
   }
 
-  if (gpu_mode == kGpuModeDrmVirgl) {
+  if (config.gpu_mode() == kGpuModeDrmVirgl) {
     return {
       "androidboot.cpuvulkan.version=0",
       "androidboot.hardware.gralloc=minigbm",
-      "androidboot.hardware.hwcomposer=drm_minigbm",
+      "androidboot.hardware.hwcomposer=drm",
       "androidboot.hardware.egl=mesa",
     };
   }
@@ -156,7 +156,8 @@ std::string QemuManager::ConfigureBootDevices(int num_disks) {
     case Arch::X86:
     case Arch::X86_64: {
       // QEMU has additional PCI devices for an ISA bridge and PIIX4
-      return ConfigureMultipleBootDevices("pci0000:00/0000:00:", 2, num_disks);
+      // virtio_gpu precedes the first console or disk
+      return ConfigureMultipleBootDevices("pci0000:00/0000:00:", 3, num_disks);
     }
     case Arch::Arm:
       return "androidboot.boot_devices=3f000000.pcie";
@@ -274,6 +275,14 @@ std::vector<Command> QemuManager::StartCommands(
         << access_kregistry_size_bytes << ") not a multiple of 1MB";
   }
 
+  auto hwcomposer_pmem_size_bytes = 0;
+  if (FileExists(instance.hwcomposer_pmem_path())) {
+    hwcomposer_pmem_size_bytes = FileSize(instance.hwcomposer_pmem_path());
+    CHECK((hwcomposer_pmem_size_bytes & (1024 * 1024 - 1)) == 0)
+        << instance.hwcomposer_pmem_path() << " file size ("
+        << hwcomposer_pmem_size_bytes << ") not a multiple of 1MB";
+  }
+
   auto pstore_size_bytes = 0;
   if (FileExists(instance.pstore_path())) {
     pstore_size_bytes = FileSize(instance.pstore_path());
@@ -306,7 +315,8 @@ std::vector<Command> QemuManager::StartCommands(
 
   qemu_cmd.AddParameter("-m");
   auto maxmem = config.memory_mb() +
-                access_kregistry_size_bytes / 1024 / 1024 +
+                (access_kregistry_size_bytes / 1024 / 1024) +
+                (hwcomposer_pmem_size_bytes / 1024 / 1024) +
                 (is_arm ? 0 : pstore_size_bytes / 1024 / 1024);
   auto slots = is_arm ? "" : ",slots=2";
   qemu_cmd.AddParameter("size=", config.memory_mb(), "M",
@@ -347,6 +357,27 @@ std::vector<Command> QemuManager::StartCommands(
 
   qemu_cmd.AddParameter("-mon");
   qemu_cmd.AddParameter("chardev=charmonitor,id=monitor,mode=control");
+
+  if (config.gpu_mode() == kGpuModeDrmVirgl) {
+    qemu_cmd.AddParameter("-display");
+    qemu_cmd.AddParameter("egl-headless");
+
+    qemu_cmd.AddParameter("-vnc");
+    qemu_cmd.AddParameter(":", instance.qemu_vnc_server_port());
+  } else {
+    qemu_cmd.AddParameter("-display");
+    qemu_cmd.AddParameter("none");
+  }
+
+  auto display_configs = config.display_configs();
+  CHECK_GE(display_configs.size(), 1);
+  auto display_config = display_configs[0];
+
+  qemu_cmd.AddParameter("-device");
+  qemu_cmd.AddParameter(qemu_version.first < 6 ?
+                            "virtio-gpu-pci" : "virtio-gpu-gl-pci", ",id=gpu0",
+                        ",xres=", display_config.width,
+                        ",yres=", display_config.height);
 
   // In kgdb mode, earlycon is an interactive console, and so early
   // dmesg will go there instead of the kernel.log. On QEMU, we do this
@@ -400,8 +431,11 @@ std::vector<Command> QemuManager::StartCommands(
 
   if (config.enable_gnss_grpc_proxy()) {
     add_hvc(instance.PerInstanceInternalPath("gnsshvc_fifo_vm"));
+    add_hvc(instance.PerInstanceInternalPath("locationhvc_fifo_vm"));
   } else {
-    add_hvc_sink();
+    for (auto i = 0; i < 2; i++) {
+      add_hvc_sink();
+    }
   }
 
   auto disk_num = instance.virtual_disk_paths().size();
@@ -431,17 +465,6 @@ std::vector<Command> QemuManager::StartCommands(
                           ",id=virtio-disk", i, bootindex);
   }
 
-  if (config.gpu_mode() == kGpuModeDrmVirgl) {
-    qemu_cmd.AddParameter("-display");
-    qemu_cmd.AddParameter("egl-headless");
-
-    qemu_cmd.AddParameter("-vnc");
-    qemu_cmd.AddParameter(":", instance.qemu_vnc_server_port());
-  } else {
-    qemu_cmd.AddParameter("-display");
-    qemu_cmd.AddParameter("none");
-  }
-
   if (!is_arm && FileExists(instance.pstore_path())) {
     // QEMU will assign the NVDIMM (ramoops pstore region) 100000000-1001fffff
     // As we will pass this to ramoops, define this region first so it is always
@@ -456,14 +479,29 @@ std::vector<Command> QemuManager::StartCommands(
 
   // QEMU does not implement virtio-pmem-pci for ARM64 yet; restore this
   // when the device has been added
-  if (!is_arm && access_kregistry_size_bytes > 0) {
-    qemu_cmd.AddParameter("-object");
-    qemu_cmd.AddParameter("memory-backend-file,id=objpmem1,share=on,mem-path=",
-                          instance.access_kregistry_path(), ",size=",
-                          access_kregistry_size_bytes);
+  if (!is_arm) {
+    if (access_kregistry_size_bytes > 0) {
+      qemu_cmd.AddParameter("-object");
+      qemu_cmd.AddParameter(
+          "memory-backend-file,id=objpmem1,share=on,mem-path=",
+          instance.access_kregistry_path(),
+          ",size=", access_kregistry_size_bytes);
 
-    qemu_cmd.AddParameter("-device");
-    qemu_cmd.AddParameter("virtio-pmem-pci,disable-legacy=on,memdev=objpmem1,id=pmem0");
+      qemu_cmd.AddParameter("-device");
+      qemu_cmd.AddParameter(
+          "virtio-pmem-pci,disable-legacy=on,memdev=objpmem1,id=pmem0");
+    }
+    if (hwcomposer_pmem_size_bytes > 0) {
+      qemu_cmd.AddParameter("-object");
+      qemu_cmd.AddParameter(
+          "memory-backend-file,id=objpmem2,share=on,mem-path=",
+          instance.hwcomposer_pmem_path(),
+          ",size=", hwcomposer_pmem_size_bytes);
+
+      qemu_cmd.AddParameter("-device");
+      qemu_cmd.AddParameter(
+          "virtio-pmem-pci,disable-legacy=on,memdev=objpmem2,id=pmem1");
+    }
   }
 
   qemu_cmd.AddParameter("-object");
@@ -508,16 +546,6 @@ std::vector<Command> QemuManager::StartCommands(
   qemu_cmd.AddParameter("-device");
   qemu_cmd.AddParameter("virtio-net-pci-non-transitional,netdev=hostnet2,id=net2");
 #endif
-
-  auto display_configs = config.display_configs();
-  CHECK_GE(display_configs.size(), 1);
-  auto display_config = display_configs[0];
-
-  qemu_cmd.AddParameter("-device");
-  qemu_cmd.AddParameter(qemu_version.first < 6 ?
-                            "virtio-gpu-pci" : "virtio-gpu-gl-pci", ",id=gpu0",
-                        ",xres=", display_config.width,
-                        ",yres=", display_config.height);
 
   qemu_cmd.AddParameter("-cpu");
   qemu_cmd.AddParameter(IsHostCompatible(arch_) ? "host" : "max");
