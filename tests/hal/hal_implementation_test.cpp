@@ -48,7 +48,6 @@ static const std::set<std::string> kKnownMissingHidl = {
     "android.hardware.automotive.vehicle@2.0",
     "android.hardware.biometrics.fingerprint@2.3",
     "android.hardware.bluetooth.a2dp@1.0",
-    "android.hardware.bluetooth.audio@2.2",
     "android.hardware.broadcastradio@1.1",
     "android.hardware.broadcastradio@2.0",
     "android.hardware.camera.provider@2.7", // Camera converted to AIDL, b/196432585
@@ -63,6 +62,7 @@ static const std::set<std::string> kKnownMissingHidl = {
     "android.hardware.graphics.allocator@3.0",
     "android.hardware.graphics.bufferqueue@1.0",
     "android.hardware.graphics.bufferqueue@2.0",
+    "android.hardware.graphics.composer@2.4", // converted to AIDL, see b/193240715
     "android.hardware.graphics.mapper@2.1",
     "android.hardware.graphics.mapper@3.0",
     "android.hardware.health.storage@1.0", // converted to AIDL, see b/177470478
@@ -145,9 +145,6 @@ static const std::set<VersionedAidlPackage> kKnownMissingAidl = {
     {"android.hardware.camera.common.", 1},
     {"android.hardware.camera.device.", 1},
     {"android.hardware.camera.metadata.", 1},
-
-    // This interface needs to be implemented (b/193240715)
-    {"android.hardware.graphics.composer3.", 1},
 
     // No implementations on cuttlefish for omapi aidl hal
     {"android.se.omapi.", 1},
