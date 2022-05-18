@@ -60,6 +60,7 @@ Commands:
   clear               Stop all running devices and delete all instance and assembly directories.
   fleet               View the current fleet status.
   kill-server         Kill the cvd_server background process.
+  restart-server      Restart the cvd_server background process.
   status              Check and print the state of a running instance.
   host_bugreport      Capture a host bugreport, including configs, logs, and tombstones.
 
@@ -82,7 +83,8 @@ const std::map<std::string, std::string> CommandToBinaryMap = {
     {"fetch", kFetchBin},
     {"fetch_cvd", kFetchBin},
     {"mkdir", kMkdirBin},
-    {"fleet", kFleetBin}};
+    {"fleet", kFleetBin},
+};
 
 }  // namespace
 
@@ -185,7 +187,7 @@ Result<cvd::Response> CvdCommandHandler::Handle(
 
   Command command("(replaced)");
   if (bin == kFetchBin) {
-    command.SetExecutableAndName(HostBinaryPath("fetch_cvd"));
+    command.SetExecutable("/proc/self/exe").SetName("fetch_cvd");
   } else if (bin == kMkdirBin) {
     command.SetExecutableAndName(kMkdirBin);
   } else {

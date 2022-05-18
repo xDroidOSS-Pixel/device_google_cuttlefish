@@ -38,6 +38,7 @@
 #include "common/libs/utils/shared_fd_flag.h"
 #include "common/libs/utils/subprocess.h"
 #include "common/libs/utils/unix_sockets.h"
+#include "host/commands/cvd/fetch_cvd.h"
 #include "host/commands/cvd/server.h"
 #include "host/commands/cvd/server_constants.h"
 #include "host/libs/config/cuttlefish_config.h"
@@ -321,16 +322,21 @@ Result<int> CvdMain(int argc, char** argv, char** envp) {
       // Something is wrong with the server, fall back to python acloud
       CallPythonAcloud(args);
     }
+  } else if (android::base::Basename(args[0]) == "fetch_cvd") {
+    return FetchCvdMain(argc, argv);
   }
   bool clean = false;
   flags.emplace_back(GflagsCompatFlag("clean", clean));
   SharedFD internal_server_fd;
   flags.emplace_back(SharedFDFlag("INTERNAL_server_fd", internal_server_fd));
+  SharedFD carryover_client_fd;
+  flags.emplace_back(
+      SharedFDFlag("INTERNAL_carryover_client_fd", carryover_client_fd));
 
   CF_EXPECT(ParseFlags(flags, args));
 
   if (internal_server_fd->IsOpen()) {
-    return CF_EXPECT(CvdServerMain(internal_server_fd));
+    return CF_EXPECT(CvdServerMain(internal_server_fd, carryover_client_fd));
   } else if (argv[0] == std::string("/proc/self/exe")) {
     return CF_ERR(
         "Expected to be in server mode, but didn't get a server "
