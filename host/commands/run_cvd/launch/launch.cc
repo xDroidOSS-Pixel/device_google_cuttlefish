@@ -40,100 +40,6 @@ namespace cuttlefish {
 
 using vm_manager::VmManager;
 
-namespace {
-
-template <typename T>
-std::vector<T> single_element_emplace(T&& element) {
-  std::vector<T> vec;
-  vec.emplace_back(std::move(element));
-  return vec;
-}
-
-}  // namespace
-
-class KernelLogMonitor : public CommandSource,
-                         public KernelLogPipeProvider,
-                         public DiagnosticInformation,
-                         public LateInjected {
- public:
-  INJECT(KernelLogMonitor(const CuttlefishConfig::InstanceSpecific& instance))
-      : instance_(instance) {}
-
-  // DiagnosticInformation
-  std::vector<std::string> Diagnostics() const override {
-    return {"Kernel log: " + instance_.PerInstancePath("kernel.log")};
-  }
-
-  Result<void> LateInject(fruit::Injector<>& injector) override {
-    number_of_event_pipes_ =
-        injector.getMultibindings<KernelLogPipeConsumer>().size();
-    return {};
-  }
-
-  // CommandSource
-  std::vector<Command> Commands() override {
-    Command command(KernelLogMonitorBinary());
-    command.AddParameter("-log_pipe_fd=", fifo_);
-
-    if (!event_pipe_write_ends_.empty()) {
-      command.AddParameter("-subscriber_fds=");
-      for (size_t i = 0; i < event_pipe_write_ends_.size(); i++) {
-        if (i > 0) {
-          command.AppendToLastParameter(",");
-        }
-        command.AppendToLastParameter(event_pipe_write_ends_[i]);
-      }
-    }
-
-    return single_element_emplace(std::move(command));
-  }
-
-  // KernelLogPipeProvider
-  SharedFD KernelLogPipe() override {
-    CHECK(!event_pipe_read_ends_.empty()) << "No more kernel pipes left";
-    SharedFD ret = event_pipe_read_ends_.back();
-    event_pipe_read_ends_.pop_back();
-    return ret;
-  }
-
- private:
-  // SetupFeature
-  bool Enabled() const override { return true; }
-  std::string Name() const override { return "KernelLogMonitor"; }
-
- private:
-  std::unordered_set<SetupFeature*> Dependencies() const override { return {}; }
-  Result<void> ResultSetup() override {
-    auto log_name = instance_.kernel_log_pipe_name();
-    CF_EXPECT(mkfifo(log_name.c_str(), 0600) == 0,
-              "Unable to create named pipe at " << log_name << ": "
-                                                << strerror(errno));
-
-    // Open the pipe here (from the launcher) to ensure the pipe is not deleted
-    // due to the usage counters in the kernel reaching zero. If this is not
-    // done and the kernel_log_monitor crashes for some reason the VMM may get
-    // SIGPIPE.
-    fifo_ = SharedFD::Open(log_name, O_RDWR);
-    CF_EXPECT(fifo_->IsOpen(),
-              "Unable to open \"" << log_name << "\": " << fifo_->StrError());
-
-    for (unsigned int i = 0; i < number_of_event_pipes_; ++i) {
-      SharedFD event_pipe_write_end, event_pipe_read_end;
-      CF_EXPECT(SharedFD::Pipe(&event_pipe_read_end, &event_pipe_write_end),
-                "Failed creating kernel log pipe: " << strerror(errno));
-      event_pipe_write_ends_.push_back(event_pipe_write_end);
-      event_pipe_read_ends_.push_back(event_pipe_read_end);
-    }
-    return {};
-  }
-
-  int number_of_event_pipes_ = 0;
-  const CuttlefishConfig::InstanceSpecific& instance_;
-  SharedFD fifo_;
-  std::vector<SharedFD> event_pipe_write_ends_;
-  std::vector<SharedFD> event_pipe_read_ends_;
-};
-
 class LogTeeCreator {
  public:
   INJECT(LogTeeCreator(const CuttlefishConfig::InstanceSpecific& instance))
@@ -206,118 +112,6 @@ class RootCanal : public CommandSource {
   const CuttlefishConfig& config_;
   const CuttlefishConfig::InstanceSpecific& instance_;
   LogTeeCreator& log_tee_;
-};
-
-class LogcatReceiver : public CommandSource, public DiagnosticInformation {
- public:
-  INJECT(LogcatReceiver(const CuttlefishConfig::InstanceSpecific& instance))
-      : instance_(instance) {}
-  // DiagnosticInformation
-  std::vector<std::string> Diagnostics() const override {
-    return {"Logcat output: " + instance_.logcat_path()};
-  }
-
-  // CommandSource
-  std::vector<Command> Commands() override {
-    return single_element_emplace(
-        Command(LogcatReceiverBinary()).AddParameter("-log_pipe_fd=", pipe_));
-  }
-
-  // SetupFeature
-  std::string Name() const override { return "LogcatReceiver"; }
-  bool Enabled() const override { return true; }
-
- private:
-  std::unordered_set<SetupFeature*> Dependencies() const override { return {}; }
-  Result<void> ResultSetup() {
-    auto log_name = instance_.logcat_pipe_name();
-    CF_EXPECT(mkfifo(log_name.c_str(), 0600) == 0,
-              "Unable to create named pipe at " << log_name << ": "
-                                                << strerror(errno));
-    // Open the pipe here (from the launcher) to ensure the pipe is not deleted
-    // due to the usage counters in the kernel reaching zero. If this is not
-    // done and the logcat_receiver crashes for some reason the VMM may get
-    // SIGPIPE.
-    pipe_ = SharedFD::Open(log_name.c_str(), O_RDWR);
-    CF_EXPECT(pipe_->IsOpen(),
-              "Can't open \"" << log_name << "\": " << pipe_->StrError());
-    return {};
-  }
-
-  const CuttlefishConfig::InstanceSpecific& instance_;
-  SharedFD pipe_;
-};
-
-class ConfigServer : public CommandSource {
- public:
-  INJECT(ConfigServer(const CuttlefishConfig::InstanceSpecific& instance))
-      : instance_(instance) {}
-
-  // CommandSource
-  std::vector<Command> Commands() override {
-    return single_element_emplace(
-        Command(ConfigServerBinary()).AddParameter("-server_fd=", socket_));
-  }
-
-  // SetupFeature
-  std::string Name() const override { return "ConfigServer"; }
-  bool Enabled() const override { return true; }
-
- private:
-  std::unordered_set<SetupFeature*> Dependencies() const override { return {}; }
-  Result<void> ResultSetup() override {
-    auto port = instance_.config_server_port();
-    socket_ = SharedFD::VsockServer(port, SOCK_STREAM);
-    CF_EXPECT(socket_->IsOpen(),
-              "Unable to create configuration server socket: "
-                  << socket_->StrError());
-    return {};
-  }
-
- private:
-  const CuttlefishConfig::InstanceSpecific& instance_;
-  SharedFD socket_;
-};
-
-class TombstoneReceiver : public CommandSource {
- public:
-  INJECT(TombstoneReceiver(const CuttlefishConfig::InstanceSpecific& instance))
-      : instance_(instance) {}
-
-  // CommandSource
-  std::vector<Command> Commands() override {
-    return single_element_emplace(
-        Command(TombstoneReceiverBinary())
-            .AddParameter("-server_fd=", socket_)
-            .AddParameter("-tombstone_dir=", tombstone_dir_));
-  }
-
-  // SetupFeature
-  std::string Name() const override { return "TombstoneReceiver"; }
-  bool Enabled() const override { return true; }
-
- private:
-  std::unordered_set<SetupFeature*> Dependencies() const override { return {}; }
-  Result<void> ResultSetup() override {
-    tombstone_dir_ = instance_.PerInstancePath("tombstones");
-    if (!DirectoryExists(tombstone_dir_)) {
-      LOG(DEBUG) << "Setting up " << tombstone_dir_;
-      CF_EXPECT(mkdir(tombstone_dir_.c_str(),
-                      S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == 0,
-                "Failed to create tombstone directory: "
-                    << tombstone_dir_ << ". Error: " << strerror(errno));
-    }
-
-    auto port = instance_.tombstone_receiver_port();
-    socket_ = SharedFD::VsockServer(port, SOCK_STREAM);
-    CF_EXPECT(socket_->IsOpen(), "Unable to create tombstone server socket: "
-                                     << socket_->StrError());
-    return {};
-  }
-
-  const CuttlefishConfig::InstanceSpecific& instance_;
-  SharedFD socket_;
-  std::string tombstone_dir_;
 };
 
 class MetricsService : public CommandSource {
@@ -807,17 +601,16 @@ fruit::Component<PublicDeps, KernelLogPipeProvider> launchComponent() {
   using Bases = Multi::Bases<CommandSource, DiagnosticInformation, SetupFeature,
                              LateInjected, KernelLogPipeConsumer>;
   return fruit::createComponent()
-      .bind<KernelLogPipeProvider, KernelLogMonitor>()
+      .install(ConfigServerComponent)
+      .install(LogcatReceiverComponent)
+      .install(KernelLogMonitorComponent)
+      .install(TombstoneReceiverComponent)
       .install(Bases::Impls<BluetoothConnector>)
-      .install(Bases::Impls<ConfigServer>)
       .install(Bases::Impls<ConsoleForwarder>)
       .install(Bases::Impls<GnssGrpcProxyServer>)
-      .install(Bases::Impls<KernelLogMonitor>)
-      .install(Bases::Impls<LogcatReceiver>)
       .install(Bases::Impls<MetricsService>)
       .install(Bases::Impls<RootCanal>)
       .install(Bases::Impls<SecureEnvironment>)
-      .install(Bases::Impls<TombstoneReceiver>)
       .install(Bases::Impls<VehicleHalServer>)
       .install(Bases::Impls<VmmCommands>)
       .install(Bases::Impls<WmediumdServer>)
