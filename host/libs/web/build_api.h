@@ -85,12 +85,12 @@ class BuildApi {
   BuildApi(CurlWrapper&, CredentialSource*, std::string api_key);
   ~BuildApi() = default;
 
-  std::string LatestBuildId(const std::string& branch,
-                            const std::string& target);
+  Result<std::string> LatestBuildId(const std::string& branch,
+                                    const std::string& target);
 
-  std::string BuildStatus(const DeviceBuild&);
+  Result<std::string> BuildStatus(const DeviceBuild&);
 
-  std::string ProductName(const DeviceBuild&);
+  Result<std::string> ProductName(const DeviceBuild&);
 
   std::vector<Artifact> Artifacts(const DeviceBuild&);
 
