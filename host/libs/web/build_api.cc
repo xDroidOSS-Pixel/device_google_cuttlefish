@@ -86,11 +86,11 @@ BuildApi::BuildApi(CurlWrapper& curl, CredentialSource* credential_source,
       credential_source(credential_source),
       api_key_(std::move(api_key)) {}
 
-std::vector<std::string> BuildApi::Headers() {
+Result<std::vector<std::string>> BuildApi::Headers() {
   std::vector<std::string> headers;
   if (credential_source) {
     headers.push_back("Authorization: Bearer " +
-                      credential_source->Credential());
+                      CF_EXPECT(credential_source->Credential()));
   }
   return headers;
 }
@@ -105,7 +105,7 @@ Result<std::string> BuildApi::LatestBuildId(const std::string& branch,
   if (!api_key_.empty()) {
     url += "&key=" + curl.UrlEscape(api_key_);
   }
-  auto curl_response = curl.DownloadToJson(url, Headers());
+  auto curl_response = curl.DownloadToJson(url, CF_EXPECT(Headers()));
   const auto& json = curl_response.data;
   CF_EXPECT(curl_response.HttpSuccess(), "Error fetching the latest build of \""
                                              << target << "\" on \"" << branch
@@ -132,7 +132,7 @@ Result<std::string> BuildApi::BuildStatus(const DeviceBuild& build) {
   if (!api_key_.empty()) {
     url += "?key=" + curl.UrlEscape(api_key_);
   }
-  auto curl_response = curl.DownloadToJson(url, Headers());
+  auto curl_response = curl.DownloadToJson(url, CF_EXPECT(Headers()));
   const auto& json = curl_response.data;
   CF_EXPECT(curl_response.HttpSuccess(),
             "Error fetching the status of \""
@@ -151,7 +151,7 @@ Result<std::string> BuildApi::ProductName(const DeviceBuild& build) {
   if (!api_key_.empty()) {
     url += "?key=" + curl.UrlEscape(api_key_);
   }
-  auto curl_response = curl.DownloadToJson(url, Headers());
+  auto curl_response = curl.DownloadToJson(url, CF_EXPECT(Headers()));
   const auto& json = curl_response.data;
   CF_EXPECT(curl_response.HttpSuccess(),
             "Error fetching the product name of \""
@@ -165,7 +165,7 @@ Result<std::string> BuildApi::ProductName(const DeviceBuild& build) {
   return json["target"]["product"].asString();
 }
 
-std::vector<Artifact> BuildApi::Artifacts(const DeviceBuild& build) {
+Result<std::vector<Artifact>> BuildApi::Artifacts(const DeviceBuild& build) {
   std::string page_token = "";
   std::vector<Artifact> artifacts;
   do {
@@ -178,16 +178,15 @@ std::vector<Artifact> BuildApi::Artifacts(const DeviceBuild& build) {
     if (!api_key_.empty()) {
       url += "&key=" + curl.UrlEscape(api_key_);
     }
-    auto curl_response = curl.DownloadToJson(url, Headers());
+    auto curl_response = curl.DownloadToJson(url, CF_EXPECT(Headers()));
     const auto& json = curl_response.data;
-    if (!curl_response.HttpSuccess()) {
-      LOG(FATAL) << "Error fetching the artifacts of \"" << build
-                 << "\". The server response was \"" << json
-                 << "\", and code was " << curl_response.http_code;
-    }
-    CHECK(!json.isMember("error"))
-        << "Response had \"error\" but had http success status. Received \""
-        << json << "\"";
+    CF_EXPECT(curl_response.HttpSuccess(),
+              "Error fetching the artifacts of \""
+                  << build << "\". The server response was \"" << json
+                  << "\", and code was " << curl_response.http_code);
+    CF_EXPECT(!json.isMember("error"),
+              "Response had \"error\" but had http success status. Received \""
+                  << json << "\"");
     if (json.isMember("nextPageToken")) {
       page_token = json["nextPageToken"].asString();
     } else {
@@ -206,11 +205,11 @@ struct CloseDir {
 
 using UniqueDir = std::unique_ptr<DIR, CloseDir>;
 
-std::vector<Artifact> BuildApi::Artifacts(const DirectoryBuild& build) {
+Result<std::vector<Artifact>> BuildApi::Artifacts(const DirectoryBuild& build) {
   std::vector<Artifact> artifacts;
   for (const auto& path : build.paths) {
     auto dir = UniqueDir(opendir(path.c_str()));
-    CHECK(dir != nullptr) << "Could not read files from \"" << path << "\"";
+    CF_EXPECT(dir != nullptr, "Could not read files from \"" << path << "\"");
     for (auto entity = readdir(dir.get()); entity != nullptr;
          entity = readdir(dir.get())) {
       artifacts.emplace_back(std::string(entity->d_name));
@@ -219,9 +218,9 @@ std::vector<Artifact> BuildApi::Artifacts(const DirectoryBuild& build) {
   return artifacts;
 }
 
-bool BuildApi::ArtifactToCallback(const DeviceBuild& build,
-                                  const std::string& artifact,
-                                  CurlWrapper::DataCallback callback) {
+Result<void> BuildApi::ArtifactToCallback(const DeviceBuild& build,
+                                          const std::string& artifact,
+                                          CurlWrapper::DataCallback callback) {
   std::string download_url_endpoint =
       BUILD_API + "/builds/" + curl.UrlEscape(build.id) + "/" +
       curl.UrlEscape(build.target) + "/attempts/latest/artifacts/" +
@@ -229,30 +228,27 @@ bool BuildApi::ArtifactToCallback(const DeviceBuild& build,
   if (!api_key_.empty()) {
     download_url_endpoint += "?key=" + curl.UrlEscape(api_key_);
   }
-  auto curl_response = curl.DownloadToJson(download_url_endpoint, Headers());
+  auto curl_response =
+      curl.DownloadToJson(download_url_endpoint, CF_EXPECT(Headers()));
   const auto& json = curl_response.data;
-  if (!(curl_response.HttpSuccess() || curl_response.HttpRedirect())) {
-    LOG(ERROR) << "Error fetching the url of \"" << artifact << "\" for \""
-               << build << "\". The server response was \"" << json
-               << "\", and code was " << curl_response.http_code;
-    return false;
-  }
-  if (json.isMember("error")) {
-    LOG(ERROR) << "Response had \"error\" but had http success status. "
-               << "Received \"" << json << "\"";
-    return false;
-  }
-  if (!json.isMember("signedUrl")) {
-    LOG(ERROR) << "URL endpoint did not have json path: " << json;
-    return false;
-  }
+  CF_EXPECT(curl_response.HttpSuccess() || curl_response.HttpRedirect(),
+            "Error fetching the url of \"" << artifact << "\" for \"" << build
+                                           << "\". The server response was \""
+                                           << json << "\", and code was "
+                                           << curl_response.http_code);
+  CF_EXPECT(!json.isMember("error"),
+            "Response had \"error\" but had http success status. "
+                << "Received \"" << json << "\"");
+  CF_EXPECT(json.isMember("signedUrl"),
+            "URL endpoint did not have json path: " << json);
   std::string url = json["signedUrl"].asString();
-  return curl.DownloadToCallback(callback, url).HttpSuccess();
+  CF_EXPECT(curl.DownloadToCallback(callback, url).HttpSuccess());
+  return {};
 }
 
-bool BuildApi::ArtifactToFile(const DeviceBuild& build,
-                              const std::string& artifact,
-                              const std::string& path) {
+Result<void> BuildApi::ArtifactToFile(const DeviceBuild& build,
+                                      const std::string& artifact,
+                                      const std::string& path) {
   std::string download_url_endpoint =
       BUILD_API + "/builds/" + curl.UrlEscape(build.id) + "/" +
       curl.UrlEscape(build.target) + "/attempts/latest/artifacts/" +
@@ -260,44 +256,41 @@ bool BuildApi::ArtifactToFile(const DeviceBuild& build,
   if (!api_key_.empty()) {
     download_url_endpoint += "?key=" + curl.UrlEscape(api_key_);
   }
-  auto curl_response = curl.DownloadToJson(download_url_endpoint, Headers());
+  auto curl_response =
+      curl.DownloadToJson(download_url_endpoint, CF_EXPECT(Headers()));
   const auto& json = curl_response.data;
-  if (!(curl_response.HttpSuccess() || curl_response.HttpRedirect())) {
-    LOG(ERROR) << "Error fetching the url of \"" << artifact << "\" for \""
-               << build << "\". The server response was \"" << json
-               << "\", and code was " << curl_response.http_code;
-    return false;
-  }
-  if (json.isMember("error")) {
-    LOG(ERROR) << "Response had \"error\" but had http success status. "
-               << "Received \"" << json << "\"";
-  }
-  if (!json.isMember("signedUrl")) {
-    LOG(ERROR) << "URL endpoint did not have json path: " << json;
-    return false;
-  }
+  CF_EXPECT(curl_response.HttpSuccess() || curl_response.HttpRedirect(),
+            "Error fetching the url of \"" << artifact << "\" for \"" << build
+                                           << "\". The server response was \""
+                                           << json << "\", and code was "
+                                           << curl_response.http_code);
+  CF_EXPECT(!json.isMember("error"),
+            "Response had \"error\" but had http success status. "
+                << "Received \"" << json << "\"");
+  CF_EXPECT(json.isMember("signedUrl"),
+            "URL endpoint did not have json path: " << json);
   std::string url = json["signedUrl"].asString();
-  return curl.DownloadToFile(url, path).HttpSuccess();
+  CF_EXPECT(curl.DownloadToFile(url, path).HttpSuccess());
+  return {};
 }
 
-bool BuildApi::ArtifactToFile(const DirectoryBuild& build,
-                              const std::string& artifact,
-                              const std::string& destination) {
+Result<void> BuildApi::ArtifactToFile(const DirectoryBuild& build,
+                                      const std::string& artifact,
+                                      const std::string& destination) {
   for (const auto& path : build.paths) {
     auto source = path + "/" + artifact;
     if (!FileExists(source)) {
       continue;
     }
     unlink(destination.c_str());
-    if (symlink(source.c_str(), destination.c_str())) {
-      int error_num = errno;
-      LOG(ERROR) << "Could not create symlink from " << source << " to "
-                 << destination << ": " << strerror(error_num);
-      return false;
-    }
-    return true;
+    CF_EXPECT(symlink(source.c_str(), destination.c_str()) == 0,
+              "Could not create symlink from " << source << " to "
+                                               << destination << ": "
+                                               << strerror(errno));
+    return {};
   }
-  return false;
+  return CF_ERR("Could not find artifact \"" << artifact << "\" in build \""
+                                             << build << "\"");
 }
 
 Result<Build> ArgumentToBuild(BuildApi& build_api, const std::string& arg,

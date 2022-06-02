@@ -103,7 +103,7 @@ Result<std::vector<std::string>> DownloadImages(
     BuildApi& build_api, const Build& build,
     const std::string& target_directory,
     const std::vector<std::string>& images) {
-  auto artifacts = build_api.Artifacts(build);
+  auto artifacts = CF_EXPECT(build_api.Artifacts(build));
   std::string img_zip_name =
       CF_EXPECT(TargetBuildZipFromArtifacts(build, "img", artifacts));
   std::string local_path = target_directory + "/" + img_zip_name;
@@ -128,7 +128,7 @@ Result<std::vector<std::string>> DownloadImages(
 Result<std::vector<std::string>> DownloadTargetFiles(
     BuildApi& build_api, const Build& build,
     const std::string& target_directory) {
-  auto artifacts = build_api.Artifacts(build);
+  auto artifacts = CF_EXPECT(build_api.Artifacts(build));
   std::string target_zip =
       CF_EXPECT(TargetBuildZipFromArtifacts(build, "target_files", artifacts));
   std::string local_path = target_directory + "/" + target_zip;
@@ -141,7 +141,7 @@ Result<std::vector<std::string>> DownloadTargetFiles(
 Result<std::vector<std::string>> DownloadHostPackage(
     BuildApi& build_api, const Build& build,
     const std::string& target_directory) {
-  auto artifacts = build_api.Artifacts(build);
+  auto artifacts = CF_EXPECT(build_api.Artifacts(build));
   CF_EXPECT(ArtifactsContains(artifacts, HOST_TOOLS),
             "Target " << build << " did not have \"" << HOST_TOOLS << "\"");
   std::string local_path = target_directory + "/" + HOST_TOOLS;
@@ -168,7 +168,7 @@ Result<std::vector<std::string>> DownloadHostPackage(
 Result<std::vector<std::string>> DownloadOtaTools(
     BuildApi& build_api, const Build& build,
     const std::string& target_directory) {
-  auto artifacts = build_api.Artifacts(build);
+  auto artifacts = CF_EXPECT(build_api.Artifacts(build));
   CF_EXPECT(ArtifactsContains(artifacts, OTA_TOOLS),
             "Target " << build << " did not have " << OTA_TOOLS);
   std::string local_path = target_directory + "/" + OTA_TOOLS;
@@ -442,20 +442,16 @@ Result<void> FetchCvdMain(int argc, char** argv) {
           build_api, FLAGS_kernel_build, "kernel", retry_period));
 
       std::string local_path = target_dir + "/kernel";
-      if (build_api.ArtifactToFile(kernel_build, "bzImage", local_path)) {
-        CF_EXPECT(AddFilesToConfig(FileSource::KERNEL_BUILD, kernel_build,
-                                   {local_path}, &config, target_dir));
+      if (!build_api.ArtifactToFile(kernel_build, "bzImage", local_path).ok()) {
+        // If the kernel is from an arm/aarch64 build, the artifact will be
+        // called Image.
+        CF_EXPECT(build_api.ArtifactToFile(kernel_build, "Image", local_path),
+                  "Could not download " << kernel_build << ":bzImage to "
+                                        << local_path);
       }
-      // If the kernel is from an arm/aarch64 build, the artifact will be called
-      // Image.
-      else if (build_api.ArtifactToFile(kernel_build, "Image", local_path)) {
-        CF_EXPECT(AddFilesToConfig(FileSource::KERNEL_BUILD, kernel_build,
-                                   {local_path}, &config, target_dir));
-      } else {
-        return CF_ERR("Could not download " << kernel_build << ":bzImage to "
-                                            << local_path);
-      }
-      std::vector<Artifact> kernel_artifacts = build_api.Artifacts(kernel_build);
+      CF_EXPECT(AddFilesToConfig(FileSource::KERNEL_BUILD, kernel_build,
+                                 {local_path}, &config, target_dir));
+      auto kernel_artifacts = CF_EXPECT(build_api.Artifacts(kernel_build));
       for (const auto& artifact : kernel_artifacts) {
         if (artifact.Name() != "initramfs.img") {
           continue;
@@ -476,22 +472,17 @@ Result<void> FetchCvdMain(int argc, char** argv) {
                                     "u-boot_crosvm_x86_64", retry_period));
 
       std::string local_path = target_dir + "/bootloader";
-      if (build_api.ArtifactToFile(bootloader_build, "u-boot.rom", local_path)) {
-        CF_EXPECT(AddFilesToConfig(FileSource::BOOTLOADER_BUILD,
-                                   bootloader_build, {local_path}, &config,
-                                   target_dir, true));
+      if (!build_api.ArtifactToFile(bootloader_build, "u-boot.rom", local_path)
+               .ok()) {
+        // If the bootloader is from an arm/aarch64 build, the artifact will be
+        // of filetype bin.
+        CF_EXPECT(build_api.ArtifactToFile(bootloader_build, "u-boot.bin",
+                                           local_path),
+                  "Could not download " << bootloader_build << ":u-boot.rom to "
+                                        << local_path);
       }
-      // If the bootloader is from an arm/aarch64 build, the artifact will be of
-      // filetype bin.
-      else if (build_api.ArtifactToFile(bootloader_build, "u-boot.bin",
-                                        local_path)) {
-        CF_EXPECT(AddFilesToConfig(FileSource::BOOTLOADER_BUILD,
-                                   bootloader_build, {local_path}, &config,
-                                   target_dir, true));
-      } else {
-        return CF_ERR("Could not download " << bootloader_build
-                                            << ":u-boot.rom to " << local_path);
-      }
+      CF_EXPECT(AddFilesToConfig(FileSource::BOOTLOADER_BUILD, bootloader_build,
+                                 {local_path}, &config, target_dir, true));
     }
   }
   curl_global_cleanup();
