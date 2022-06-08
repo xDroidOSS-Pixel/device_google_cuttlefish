@@ -16,18 +16,20 @@
 #pragma once
 
 #include <fruit/fruit.h>
-#include <vector>
 
-#include "common/libs/utils/result.h"
 #include "common/libs/utils/subprocess.h"
-#include "host/libs/config/feature.h"
+#include "host/libs/config/cuttlefish_config.h"
 
 namespace cuttlefish {
 
-class CommandSource : public virtual SetupFeature {
+class LogTeeCreator {
  public:
-  virtual ~CommandSource() = default;
-  virtual Result<std::vector<Command>> Commands() = 0;
+  INJECT(LogTeeCreator(const CuttlefishConfig::InstanceSpecific& instance));
+
+  Command CreateLogTee(Command& cmd, const std::string& process_name);
+
+ private:
+  const CuttlefishConfig::InstanceSpecific& instance_;
 };
 
 }  // namespace cuttlefish

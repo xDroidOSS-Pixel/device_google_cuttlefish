@@ -22,6 +22,7 @@
 
 #include "common/libs/fs/shared_fd.h"
 #include "common/libs/utils/subprocess.h"
+#include "host/commands/run_cvd/launch/log_tee_creator.h"
 #include "host/libs/config/command_source.h"
 #include "host/libs/config/custom_actions.h"
 #include "host/libs/config/cuttlefish_config.h"
@@ -53,12 +54,35 @@ fruit::Component<fruit::Required<const CuttlefishConfig::InstanceSpecific>>
 ConfigServerComponent();
 
 fruit::Component<fruit::Required<const CuttlefishConfig,
+                                 const CuttlefishConfig::InstanceSpecific>>
+ConsoleForwarderComponent();
+
+fruit::Component<
+    fruit::Required<const CuttlefishConfig,
+                    const CuttlefishConfig::InstanceSpecific, LogTeeCreator>>
+OpenWrtComponent();
+
+fruit::Component<
+    fruit::Required<const CuttlefishConfig,
+                    const CuttlefishConfig::InstanceSpecific, LogTeeCreator>>
+RootCanalComponent();
+
+fruit::Component<fruit::Required<const CuttlefishConfig,
                                  const CuttlefishConfig::InstanceSpecific,
                                  KernelLogPipeProvider>>
 SecureEnvComponent();
 
 fruit::Component<fruit::Required<const CuttlefishConfig::InstanceSpecific>>
 TombstoneReceiverComponent();
+
+fruit::Component<fruit::Required<const CuttlefishConfig,
+                                 const CuttlefishConfig::InstanceSpecific>>
+VehicleHalServerComponent();
+
+fruit::Component<
+    fruit::Required<const CuttlefishConfig,
+                    const CuttlefishConfig::InstanceSpecific, LogTeeCreator>>
+WmediumdServerComponent();
 
 fruit::Component<fruit::Required<const CuttlefishConfig, vm_manager::VmManager,
                                  const CuttlefishConfig::InstanceSpecific>,
