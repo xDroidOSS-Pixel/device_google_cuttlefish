@@ -347,6 +347,10 @@ DEFINE_uint32(camera_server_port, 0, "camera vsock port");
 
 DEFINE_string(userdata_format, "f2fs", "The userdata filesystem format");
 
+DEFINE_bool(use_overlay, true,
+            "Capture disk writes an overlay. This is a "
+            "prerequisite for powerwash_cvd or multiple instances.");
+
 DECLARE_string(assembly_dir);
 DECLARE_string(boot_image);
 DECLARE_string(system_image_dir);
@@ -777,6 +781,9 @@ CuttlefishConfig InitializeCuttlefishConfiguration(
   auto instance_nums = InstanceNumsCalculator().FromGlobalGflags().Calculate();
   CHECK(instance_nums.ok()) << instance_nums.error();
 
+  CHECK(FLAGS_use_overlay || instance_nums->size() == 1)
+      << "`--use_overlay=false` is incompatible with multiple instances";
+
   bool is_first_instance = true;
   int instance_index = 0;
   for (const auto& num : *instance_nums) {
@@ -866,26 +873,36 @@ CuttlefishConfig InitializeCuttlefishConfiguration(
 
     instance.set_camera_server_port(FLAGS_camera_server_port);
 
-    if (FLAGS_protected_vm) {
-      instance.set_virtual_disk_paths(
-          {const_instance.PerInstancePath("os_composite.img")});
+    std::vector<std::string> virtual_disk_paths;
+
+    bool os_overlay = true;
+    os_overlay &= !FLAGS_protected_vm;
+    // Gem5 already uses CoW wrappers around disk images
+    os_overlay &= FLAGS_vm_manager != Gem5Manager::name();
+    os_overlay &= FLAGS_use_overlay;
+    if (os_overlay) {
+      auto path = const_instance.PerInstancePath("overlay.img");
+      virtual_disk_paths.push_back(path);
     } else {
-      std::vector<std::string> virtual_disk_paths = {
-          const_instance.PerInstancePath("persistent_composite.img"),
-      };
-      if (FLAGS_vm_manager != Gem5Manager::name()) {
-        virtual_disk_paths.insert(virtual_disk_paths.begin(),
-            const_instance.PerInstancePath("overlay.img"));
-      } else {
-        // Gem5 already uses CoW wrappers around disk images
-        virtual_disk_paths.insert(virtual_disk_paths.begin(),
-            const_instance.os_composite_disk_path());
-      }
-      if (FLAGS_use_sdcard) {
-        virtual_disk_paths.push_back(const_instance.sdcard_path());
-      }
-      instance.set_virtual_disk_paths(virtual_disk_paths);
+      virtual_disk_paths.push_back(const_instance.os_composite_disk_path());
     }
+
+    bool persistent_disk = true;
+    persistent_disk &= !FLAGS_protected_vm;
+    persistent_disk &= FLAGS_vm_manager != Gem5Manager::name();
+    if (persistent_disk) {
+      auto path = const_instance.PerInstancePath("persistent_composite.img");
+      virtual_disk_paths.push_back(path);
+    }
+
+    bool sdcard = true;
+    sdcard &= FLAGS_use_sdcard;
+    sdcard &= !FLAGS_protected_vm;
+    if (sdcard) {
+      virtual_disk_paths.push_back(const_instance.sdcard_path());
+    }
+
+    instance.set_virtual_disk_paths(virtual_disk_paths);
 
     // We'd like to set mac prefix to be 5554, 5555, 5556, ... in normal cases.
     // When --base_instance_num=3, this might be 5556, 5557, 5558, ... (skipping
