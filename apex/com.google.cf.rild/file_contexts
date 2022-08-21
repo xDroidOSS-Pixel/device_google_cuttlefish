@@ -1,3 +1,0 @@
-(/.*)?                        u:object_r:vendor_file:s0
-/bin/hw/libcuttlefish-rild    u:object_r:libcuttlefish_rild_exec:s0
-/etc/permissions(/.*)?        u:object_r:vendor_configs_file:s0
