@@ -106,8 +106,8 @@ static const std::set<std::string> kKnownMissingHidl = {
     "android.hardware.vibrator@1.3",
     "android.hardware.vr@1.0",
     "android.hardware.weaver@1.0",
-    "android.hardware.wifi.hostapd@1.3",
-    "android.hardware.wifi.supplicant@1.4",
+    "android.hardware.wifi.hostapd@1.3", // Converted to AIDL (see b/194806512)
+    "android.hardware.wifi.supplicant@1.4", // Converted to AIDL (see b/196235436)
     "android.hardware.wifi.offload@1.0",
     "android.hidl.base@1.0",
     "android.hidl.memory.token@1.0",
@@ -203,6 +203,7 @@ static const std::set<VersionedAidlPackage> kKnownMissingAidl = {
 
     // These types are only used in TV.
     {"android.hardware.tv.tuner.", 1},
+    {"android.hardware.tv.input.", 1},
 
     // No implementation of V2 yet TODO(b/232285403)
     {"android.hardware.radio.network.", 2},
