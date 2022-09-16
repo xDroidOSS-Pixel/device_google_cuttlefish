@@ -25,6 +25,7 @@
 #include "common/libs/utils/result.h"
 #include "host/commands/cvd/server.h"
 #include "host/commands/cvd/server_command_impl.h"
+#include "host/commands/cvd/server_command_subprocess_waiter.h"
 
 namespace cuttlefish {
 namespace cvd_cmd_impl {

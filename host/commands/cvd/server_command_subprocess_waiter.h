@@ -15,23 +15,31 @@
  */
 
 #pragma once
-#include <grpc/grpc.h>
-#include <grpcpp/channel.h>
-#include <grpcpp/client_context.h>
-#include <grpcpp/create_channel.h>
+
+#include <mutex>
+#include <optional>
+
+#include <fruit/fruit.h>
+
 #include "common/libs/utils/result.h"
-#include "gnss_grpc_proxy.grpc.pb.h"
-#include "host/libs/location/GpsFix.h"
+#include "common/libs/utils/subprocess.h"
 
 namespace cuttlefish {
-class GnssClient {
- public:
-  GnssClient(std::shared_ptr<grpc::Channel> channel);
+namespace cvd_cmd_impl {
 
-  Result<grpc::Status> SendGpsLocations(
-      int delay, const GpsFixArray& coordinates);
+class SubprocessWaiter {
+ public:
+  INJECT(SubprocessWaiter()) {}
+
+  Result<void> Setup(Subprocess subprocess);
+  Result<siginfo_t> Wait();
+  Result<void> Interrupt();
 
  private:
-  std::unique_ptr<gnss_grpc_proxy::GnssGrpcProxy::Stub> stub_;
+  std::optional<Subprocess> subprocess_;
+  std::mutex interruptible_;
+  bool interrupted_ = false;
 };
+
+}  // namespace cvd_cmd_impl
 }  // namespace cuttlefish
