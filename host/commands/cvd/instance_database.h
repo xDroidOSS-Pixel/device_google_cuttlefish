@@ -38,14 +38,46 @@ class InstanceDatabase {
  public:
   InstanceDatabase();
   bool IsEmpty() const;
+
+  // returns CF_ERR if the home_directory is already taken
+  Result<void> AddInstanceGroup(const std::string& home_dir,
+                                const std::string& host_binaries_dir);
+
+  /** Finds an InstanceGroupRecord, and add new InstanceRecord to it
+   *
+   * returns CF_ERR if group does not exist in this database
+   *
+   * Note that "group" is just a key.
+   * addressof(found_group) != addressof(group)
+   *
+   */
+  Result<void> AddInstance(const LocalInstanceGroup& group, const int id);
+
+  /*
+   *  auto group = CF_EXPEC(FindGroups(...));
+   *  RemoveInstanceGroup(group)
+   */
+  bool RemoveInstanceGroup(const LocalInstanceGroup& group);
+
   Result<Set<LocalInstanceGroup>> FindGroups(const Query& query) const;
   Result<Set<LocalInstance>> FindInstances(const Query& query) const;
   const auto& InstanceGroups() const { return local_instance_groups_; }
+
+  /*
+   * FindGroup/Instance method must be used when exactly one instance/group
+   * is expected to match the query
+   */
+  Result<LocalInstanceGroup> FindGroup(const Query& query) const;
+  Result<LocalInstance> FindInstance(const Query& query) const;
 
  private:
   template <typename T>
   Result<Set<T>> Find(const Query& query,
                       const Map<FieldName, ConstHandler<T>>& handler_map) const;
+
+  template <typename T>
+  Result<T> FindOne(const Query& query,
+                    const Map<FieldName, ConstHandler<T>>& handler_map) const;
 
   // actual Find implementations
   Result<Set<LocalInstanceGroup>> FindGroupsByHome(const Value& home) const;
