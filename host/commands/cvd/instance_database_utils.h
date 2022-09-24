@@ -26,6 +26,8 @@
 namespace cuttlefish {
 namespace instance_db {
 
+Result<std::string> GetCuttlefishConfigPath(const std::string& home);
+
 std::string GenInternalGroupName();
 std::string LocalDeviceNameRule(const std::string& group_name,
                                 const std::string& instance_name);
@@ -73,6 +75,23 @@ Result<typename std::remove_reference<S>::type> AtMostOne(
     S&& s, const std::string& err_msg) {
   CF_EXPECT(AtMostN(s, 1), err_msg);
   return {std::forward<S>(s)};
+}
+
+template <typename RetSet, typename AnyContainer>
+RetSet Intersection(const RetSet& u, AnyContainer&& v) {
+  RetSet result;
+  for (auto const& e : v) {
+    if (u.find(e) != u.end()) {
+      result.insert(e);
+    }
+  }
+  return result;
+}
+
+template <typename RetSet, typename AnyContainer, typename... Containers>
+RetSet Intersection(const RetSet& u, AnyContainer&& v, Containers&&... s) {
+  RetSet first = Intersection(u, std::forward<AnyContainer>(v));
+  return Intersection(first, std::forward<Containers>(s)...);
 }
 
 }  // namespace instance_db

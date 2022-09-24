@@ -58,9 +58,12 @@ class InstanceDatabase {
    *  RemoveInstanceGroup(group)
    */
   bool RemoveInstanceGroup(const LocalInstanceGroup& group);
+  void Clear();
 
   Result<Set<LocalInstanceGroup>> FindGroups(const Query& query) const;
+  Result<Set<LocalInstanceGroup>> FindGroups(const Queries& queries) const;
   Result<Set<LocalInstance>> FindInstances(const Query& query) const;
+  Result<Set<LocalInstance>> FindInstances(const Queries& queries) const;
   const auto& InstanceGroups() const { return local_instance_groups_; }
 
   /*
@@ -68,7 +71,9 @@ class InstanceDatabase {
    * is expected to match the query
    */
   Result<LocalInstanceGroup> FindGroup(const Query& query) const;
+  Result<LocalInstanceGroup> FindGroup(const Queries& queries) const;
   Result<LocalInstance> FindInstance(const Query& query) const;
+  Result<LocalInstance> FindInstance(const Queries& queries) const;
 
  private:
   template <typename T>
@@ -76,7 +81,14 @@ class InstanceDatabase {
                       const Map<FieldName, ConstHandler<T>>& handler_map) const;
 
   template <typename T>
+  Result<Set<T>> Find(const Queries& queries,
+                      const Map<FieldName, ConstHandler<T>>& handler_map) const;
+  template <typename T>
   Result<T> FindOne(const Query& query,
+                    const Map<FieldName, ConstHandler<T>>& handler_map) const;
+
+  template <typename T>
+  Result<T> FindOne(const Queries& queries,
                     const Map<FieldName, ConstHandler<T>>& handler_map) const;
 
   // actual Find implementations
