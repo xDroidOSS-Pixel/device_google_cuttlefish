@@ -38,6 +38,7 @@ constexpr char kLogcatVsockMode[] = "vsock";
 
 constexpr char kDefaultUuidPrefix[] = "699acfc4-c8c4-11e7-882b-5065f31dc1";
 constexpr char kCuttlefishConfigEnvVarName[] = "CUTTLEFISH_CONFIG_FILE";
+constexpr char kCuttlefishInstanceEnvVarName[] = "CUTTLEFISH_INSTANCE";
 constexpr char kVsocUserPrefix[] = "vsoc-";
 constexpr char kCvdNamePrefix[] = "cvd-";
 constexpr char kBootStartedMessage[] ="VIRTUAL_DEVICE_BOOT_STARTED";
@@ -114,6 +115,9 @@ class CuttlefishConfig {
 
   int memory_mb() const;
   void set_memory_mb(int memory_mb);
+
+  int ddr_mem_mb() const;
+  void set_ddr_mem_mb(int ddr_mem_mb);
 
   struct DisplayConfig {
     int width;
@@ -649,8 +653,8 @@ class CuttlefishConfig {
   CuttlefishConfig& operator=(const CuttlefishConfig&) = delete;
 };
 
-// Returns the instance number as obtained from the CUTTLEFISH_INSTANCE
-// environment variable or the username.
+// Returns the instance number as obtained from the
+// *kCuttlefishInstanceEnvVarName environment variable or the username.
 int GetInstance();
 
 // Returns default Vsock CID, which is

@@ -16,7 +16,11 @@
 
 #include "host/commands/cvd/instance_database_utils.h"
 
+#include <regex>
+#include <set>
 #include <sstream>
+#include <string_view>
+#include <vector>
 
 #include <android-base/file.h>
 
@@ -25,6 +29,7 @@
 
 namespace cuttlefish {
 namespace instance_db {
+
 Result<std::string> GetCuttlefishConfigPath(const std::string& home) {
   std::string home_realpath;
   CF_EXPECT(DirectoryExists(home), "Invalid Home Directory");
@@ -44,6 +49,27 @@ std::string GenInternalGroupName() {
 std::string LocalDeviceNameRule(const std::string& group_name,
                                 const std::string& instance_name) {
   return group_name + "-" + instance_name;
+}
+
+// [A-Za-z0-9_]+
+bool IsValidInstanceName(const std::string& token) {
+  std::regex regular_expr("[A-Za-z_0-9]+");
+  return std::regex_match(token, regular_expr);
+}
+
+bool PotentiallyHostBinariesDir(const std::string& host_binaries_dir) {
+  if (host_binaries_dir.empty() || !DirectoryExists(host_binaries_dir)) {
+    return false;
+  }
+  std::vector<std::string> contents = DirectoryContents(host_binaries_dir);
+  std::set<std::string> contents_set{std::move_iterator(contents.begin()),
+                                     std::move_iterator(contents.end())};
+  std::set<std::string> launchers = {"cvd", "launch_cvd"};
+  std::vector<std::string> result;
+  std::set_intersection(launchers.cbegin(), launchers.cend(),
+                        contents_set.cbegin(), contents_set.cend(),
+                        std::back_inserter(result));
+  return !result.empty();
 }
 
 std::string TooManyInstancesFound(const int n, const std::string& field_name) {
