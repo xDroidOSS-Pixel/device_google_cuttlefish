@@ -532,7 +532,8 @@ Result<KernelConfig> ReadKernelConfig() {
 
 CuttlefishConfig InitializeCuttlefishConfiguration(
     const std::string& root_dir, int modem_simulator_count,
-    KernelConfig kernel_config, fruit::Injector<>& injector) {
+    KernelConfig kernel_config, fruit::Injector<>& injector,
+    const FetcherConfig& fetcher_config) {
   CuttlefishConfig tmp_config_obj;
 
   for (const auto& fragment : injector.getMultibindings<ConfigFragment>()) {
@@ -638,6 +639,7 @@ CuttlefishConfig InitializeCuttlefishConfiguration(
   tmp_config_obj.set_smt(FLAGS_smt);
 
   tmp_config_obj.set_memory_mb(FLAGS_memory_mb);
+  tmp_config_obj.set_ddr_mem_mb(FLAGS_memory_mb * 2);
 
   tmp_config_obj.set_setupwizard_mode(FLAGS_setupwizard_mode);
   tmp_config_obj.set_enable_bootanimation(FLAGS_enable_bootanimation);
@@ -819,7 +821,7 @@ CuttlefishConfig InitializeCuttlefishConfiguration(
     const auto vsock_guest_cid = FLAGS_vsock_guest_cid + num - GetInstance();
     instance.set_vsock_guest_cid(vsock_guest_cid);
     auto calc_vsock_port = [vsock_guest_cid](const int base_port) {
-      // a base (vsock) port is like 9200 for modem_simulator, etc
+      // a base (vsock) port is like 9600 for modem_simulator, etc
       return cuttlefish::GetVsockServerPort(base_port, vsock_guest_cid);
     };
     instance.set_session_id(iface_config.mobile_tap.session_id);
@@ -1066,10 +1068,10 @@ CuttlefishConfig InitializeCuttlefishConfiguration(
     if (modem_simulator_count > 0) {
       std::stringstream modem_ports;
       for (auto index {0}; index < modem_simulator_count - 1; index++) {
-        auto port = 9200 + (modem_simulator_count * (num - 1)) + index;
+        auto port = 9600 + (modem_simulator_count * (num - 1)) + index;
         modem_ports << calc_vsock_port(port) << ",";
       }
-      auto port = 9200 + (modem_simulator_count * (num - 1)) +
+      auto port = 9600 + (modem_simulator_count * (num - 1)) +
                   modem_simulator_count - 1;
       modem_ports << calc_vsock_port(port);
       instance.set_modem_simulator_ports(modem_ports.str());
@@ -1089,7 +1091,7 @@ CuttlefishConfig InitializeCuttlefishConfiguration(
 
   tmp_config_obj.set_enable_audio(FLAGS_enable_audio);
 
-  DiskImageFlagsVectorization(tmp_config_obj);
+  DiskImageFlagsVectorization(tmp_config_obj, fetcher_config);
 
   return tmp_config_obj;
 }
