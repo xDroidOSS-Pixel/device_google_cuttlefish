@@ -22,13 +22,37 @@
 
 namespace cuttlefish {
 
+struct GCPInstance {
+  int disk_size_gb;
+  const char* machine_type;
+  const char* min_cpu_platform;
+};
+
+struct CreateHostInstanceRequest {
+  GCPInstance* gcp;
+};
+
+struct BuildInfo {
+  const std::string& build_id;
+  const std::string& target;
+};
+
+struct CreateCVDRequest {
+  const BuildInfo& build_info;
+};
+
 class CloudOrchestratorApi {
  public:
   CloudOrchestratorApi(const std::string& service_url, const std::string& zone,
                        HttpClient& http_client);
   ~CloudOrchestratorApi();
 
+  Result<std::string> CreateHost(const CreateHostInstanceRequest& request);
+
   Result<std::vector<std::string>> ListHosts();
+
+  Result<std::string> CreateCVD(const std::string& host,
+                                const CreateCVDRequest& request);
 
   Result<std::vector<std::string>> ListCVDWebRTCStreams(
       const std::string& host);
