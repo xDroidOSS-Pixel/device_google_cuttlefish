@@ -13,17 +13,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <iostream>
-
 #include "host/commands/remote/remote.h"
 
-#include "common/libs/utils/json.h"
+#include <iostream>
 
 namespace cuttlefish {
 namespace {
 
 const char* kFieldItems = "items";
 const char* kFieldName = "name";
+const char* kFieldDone = "done";
+const char* kFieldResult = "result";
+const char* kFieldResponse = "response";
 
 static std::string JsonToString(const Json::Value& input) {
   Json::StreamWriterBuilder wbuilder;
@@ -33,7 +34,6 @@ static std::string JsonToString(const Json::Value& input) {
 
 static std::string CreateHostBody(const CreateHostInstanceRequest& request) {
   Json::Value gcp;
-  gcp["disk_size_gb"] = request.gcp->disk_size_gb;
   gcp["machine_type"] = request.gcp->machine_type;
   gcp["min_cpu_platform"] = request.gcp->min_cpu_platform;
   Json::Value request_json;
@@ -76,6 +76,35 @@ Result<std::string> CloudOrchestratorApi::CreateHost(
   return resp_json[kFieldName].asString();
 }
 
+Result<Operation> CloudOrchestratorApi::WaitCloudOperation(
+    const std::string& name) {
+  std::string url =
+      service_url_ + "/v1/zones/" + zone_ + "/operations/" + name + "/wait";
+  auto resp =
+      CF_EXPECT(http_client_.PostToString(url, ""), "Http client failed");
+  CF_EXPECT(resp.HttpSuccess(), "Http request failed with status code: "
+                                    << resp.http_code << ", server response:\n"
+                                    << resp.data);
+  auto resp_json =
+      CF_EXPECT(ParseJson(resp.data), "Failed parsing response body");
+  CF_EXPECT(resp_json.isMember(kFieldDone),
+            "Invalid response,  missing field: '" << kFieldDone << "'");
+  bool done = resp_json[kFieldDone].asBool();
+  if (!done) {
+    return Operation{done : done};
+  }
+  CF_EXPECT(resp_json.isMember(kFieldResult),
+            "Invalid response,  missing field: '" << kFieldResult << "'");
+  CF_EXPECT(resp_json[kFieldResult].isMember(kFieldResponse),
+            "Invalid response,  missing field: '" << kFieldResponse << "'");
+  return Operation{
+    done : done,
+    result : OperationResult{
+      response : resp_json[kFieldResult][kFieldResponse],
+    }
+  };
+}
+
 Result<std::vector<std::string>> CloudOrchestratorApi::ListHosts() {
   std::string url = service_url_ + "/v1/zones/" + zone_ + "/hosts";
   auto resp = CF_EXPECT(http_client_.GetToString(url), "Http client failed");
@@ -109,6 +138,35 @@ Result<std::string> CloudOrchestratorApi::CreateCVD(
       resp_json.isMember(kFieldName),
       "Invalid create cvd response,  missing field: '" << kFieldName << "'");
   return resp_json[kFieldName].asString();
+}
+
+Result<Operation> CloudOrchestratorApi::WaitHostOperation(
+    const std::string& host, const std::string& name) {
+  std::string url = service_url_ + "/v1/zones/" + zone_ + "/hosts/" + host +
+                    "/operations/" + name + "/wait";
+  auto resp =
+      CF_EXPECT(http_client_.PostToString(url, ""), "Http client failed");
+  CF_EXPECT(resp.HttpSuccess(), "Http request failed with status code: "
+                                    << resp.http_code << ", server response:\n"
+                                    << resp.data);
+  auto resp_json =
+      CF_EXPECT(ParseJson(resp.data), "Failed parsing response body");
+  CF_EXPECT(resp_json.isMember(kFieldDone),
+            "Invalid response,  missing field: '" << kFieldDone << "'");
+  bool done = resp_json[kFieldDone].asBool();
+  if (!done) {
+    return Operation{done : done};
+  }
+  CF_EXPECT(resp_json.isMember(kFieldResult),
+            "Invalid response,  missing field: '" << kFieldResult << "'");
+  CF_EXPECT(resp_json[kFieldResult].isMember(kFieldResponse),
+            "Invalid response,  missing field: '" << kFieldResponse << "'");
+  return Operation{
+    done : done,
+    result : OperationResult{
+      response : resp_json[kFieldResult][kFieldResponse],
+    }
+  };
 }
 
 Result<std::vector<std::string>> CloudOrchestratorApi::ListCVDWebRTCStreams(
