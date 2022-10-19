@@ -18,49 +18,32 @@ package {
 }
 
 cc_defaults {
-    name: "cvdremote_defaults",
-    static_libs: [
+    name: "cvd_load_defaults",
+    shared_libs: [
+        "libext2_blkid",
         "libbase",
-        "liblog",
-        "libjsoncpp",
-        "libcuttlefish_utils",
         "libcuttlefish_fs",
-        "libcuttlefish_web",
-        "libcurl",
-        "libcrypto",
-        "libssl",
-        "libz",
+        "liblog",
+        "libicuuc",
     ],
     defaults: ["cuttlefish_buildhost_only"],
 }
 
-cc_library_static {
-    name: "libcvdremote",
-    srcs: [
-        "remote.cc",
-        "actions.cc",
-    ],
-    defaults: ["cvdremote_defaults"],
-}
-
-cc_binary {
-    name: "cvdremote",
-    srcs: [
-        "cvdremote.cc"
+cc_test_host {
+    name: "cvd_load_test",
+    shared_libs: [
+        "libext2_blkid",
+        "libbase",
+        "libcuttlefish_fs",
+        "libcuttlefish_utils",
+        "libjsoncpp",
     ],
     static_libs: [
-        "libgflags",
-        "libcvdremote",
+        "libcvd_parser",
+        "libgmock",
     ],
-    defaults: ["cvdremote_defaults"],
-}
-
-cc_test_host {
-    name: "libcvdremote_test",
     srcs: [
-        "unittest/main_test.cc",
-        "unittest/output_test.cc",
+        "unittest/flags_parser_test.cc",
     ],
-    defaults: ["cuttlefish_host", "cvdremote_defaults"],
+    defaults: ["cvd_load_defaults"],
 }
-
