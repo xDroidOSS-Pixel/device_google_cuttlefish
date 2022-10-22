@@ -53,6 +53,17 @@ void InitStringConfig(Json::Value& instances, const std::string& group,
     }
   }
 }
+void InitBoolConfig(Json::Value& instances, const std::string& group,
+                    const std::string& json_flag, const bool default_value) {
+  // Allocate and initialize with default values
+  int size = instances.size();
+  for (int i = 0; i < size; i++) {
+    if (!instances[i].isMember(group) ||
+        (!instances[i][group].isMember(json_flag))) {
+      instances[i][group][json_flag] = default_value;
+    }
+  }
+}
 
 void InitStringConfigSubGroup(Json::Value& instances, const std::string& group,
                               const std::string& subgroup, const std::string& json_flag,
@@ -96,9 +107,31 @@ std::string GenerateStrGflag(const Json::Value& instances, const std::string& gf
   return buff.str();
 }
 
-std::string GenerateGflagIntSubGroup(const Json::Value& instances,
-                                  const std::string& gflag_name, const std::string& group,
-                                  const std::string& subgroup, const std::string& json_flag) {
+inline std::string BoolToString(bool val) { return val ? "true" : "false"; }
+
+std::string GenerateBoolGflag(const Json::Value& instances,
+                              const std::string& gflag_name,
+                              const std::string& group,
+                              const std::string& json_flag) {
+  int size = instances.size();
+  std::stringstream buff;
+  // Append Header
+  buff << "--" << gflag_name << "=";
+  // Append values
+  for (int i = 0; i < size; i++) {
+    buff << BoolToString(instances[i][group][json_flag].asBool());
+    if (i != size - 1) {
+      buff << ",";
+    }
+  }
+  return buff.str();
+}
+
+std::string GenerateIntGflagSubGroup(const Json::Value& instances,
+                                     const std::string& gflag_name,
+                                     const std::string& group,
+                                     const std::string& subgroup,
+                                     const std::string& json_flag) {
   int size = instances.size();
   std::stringstream buff;
   // Append Header
@@ -125,4 +158,33 @@ std::string GenerateStrGflagSubGroup(const Json::Value& instances,
   }
   return buff.str();
 }
+
+std::string GenerateBoolGflagSubGroup(const Json::Value& instances,
+                                      const std::string& gflag_name,
+                                      const std::string& group,
+                                      const std::string& subgroup,
+                                      const std::string& json_flag) {
+  int size = instances.size();
+  std::stringstream buff;
+  // Append Header
+  buff << "--" << gflag_name << "=";
+  // Append values
+  for (int i = 0; i < size; i++) {
+    buff << BoolToString(instances[i][group][subgroup][json_flag].asBool());
+    if (i != size - 1) {
+      buff << ",";
+    }
+  }
+  return buff.str();
+}
+
+std::vector<std::string> MergeResults(std::vector<std::string> first_list,
+                                      std::vector<std::string> scond_list) {
+  std::vector<std::string> result;
+  result.reserve(first_list.size() + scond_list.size());
+  result.insert(result.begin(), first_list.begin(), first_list.end());
+  result.insert(result.end(), scond_list.begin(), scond_list.end());
+  return result;
+}
+
 }  // namespace cuttlefish
