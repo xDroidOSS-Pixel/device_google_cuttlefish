@@ -32,13 +32,13 @@ TEST(BootFlagsParserTest, ParseTwoInstancesExtraBootConfigFlagEmptyJson) {
 }
   )"""";
 
-  std::vector<std::string> serialized_data;
   Json::Value json_configs;
-  std::string strjson(test_string);
+  std::string json_text(test_string);
 
-  EXPECT_TRUE(ParseJsonString(strjson, json_configs));
-  EXPECT_TRUE(ParseCvdConfigs(json_configs, serialized_data).ok());
-  EXPECT_TRUE(FindConfig(serialized_data, R"(--extra_bootconfig_args=,)"));
+  EXPECT_TRUE(ParseJsonString(json_text, json_configs));
+  auto serialized_data = ParseCvdConfigs(json_configs);
+  EXPECT_TRUE(serialized_data.ok());
+  EXPECT_TRUE(FindConfig(*serialized_data, R"(--extra_bootconfig_args=,)"));
 }
 
 TEST(BootFlagsParserTest, ParseTwoInstancesExtraBootConfigFlagPartialJson) {
@@ -59,13 +59,13 @@ TEST(BootFlagsParserTest, ParseTwoInstancesExtraBootConfigFlagPartialJson) {
 }
   )"""";
 
-  std::vector<std::string> serialized_data;
   Json::Value json_configs;
-  std::string strjson(test_string);
+  std::string json_text(test_string);
 
-  EXPECT_TRUE(ParseJsonString(strjson, json_configs));
-  EXPECT_TRUE(ParseCvdConfigs(json_configs, serialized_data).ok());
-  EXPECT_TRUE(FindConfig(serialized_data,
+  EXPECT_TRUE(ParseJsonString(json_text, json_configs));
+  auto serialized_data = ParseCvdConfigs(json_configs);
+  EXPECT_TRUE(serialized_data.ok());
+  EXPECT_TRUE(FindConfig(*serialized_data,
                          R"(--extra_bootconfig_args=,androidboot.X=Y)"));
 }
 
@@ -88,15 +88,98 @@ TEST(BootFlagsParserTest, ParseTwoInstancesExtraBootConfigFlagFullJson) {
 }
   )"""";
 
-  std::vector<std::string> serialized_data;
   Json::Value json_configs;
-  std::string strjson(test_string);
+  std::string json_text(test_string);
 
-  EXPECT_TRUE(ParseJsonString(strjson, json_configs));
-  EXPECT_TRUE(ParseCvdConfigs(json_configs, serialized_data).ok());
-  EXPECT_TRUE(FindConfig(
-      serialized_data,
-      R"(--extra_bootconfig_args=androidboot.X=Y,androidboot.X=Z)"));
+  EXPECT_TRUE(ParseJsonString(json_text, json_configs));
+  auto serialized_data = ParseCvdConfigs(json_configs);
+  EXPECT_TRUE(serialized_data.ok());
+  EXPECT_TRUE(
+      FindConfig(*serialized_data,
+                 R"(--extra_bootconfig_args=androidboot.X=Y,androidboot.X=Z)"));
+}
+
+TEST(BootFlagsParserTest, ParseTwoInstancesBootAnimationFlagEmptyJson) {
+  const char* test_string = R""""(
+{
+    "instances" :
+    [
+        {
+        },
+        {
+        }
+    ]
+}
+  )"""";
+
+  Json::Value json_configs;
+  std::string json_text(test_string);
+
+  EXPECT_TRUE(ParseJsonString(json_text, json_configs));
+  auto serialized_data = ParseCvdConfigs(json_configs);
+  EXPECT_TRUE(serialized_data.ok()) << serialized_data.error().Trace();
+  EXPECT_TRUE(
+      FindConfig(*serialized_data, R"(--enable_bootanimation=true,true)"))
+      << "enable_bootanimation flag is missing or wrongly formatted";
+}
+
+TEST(BootFlagsParserTest, ParseTwoInstancesBootAnimationFlagPartialJson) {
+  const char* test_string = R""""(
+{
+    "instances" :
+    [
+        {
+            "boot": {
+            }
+        },
+        {
+            "boot": {
+                "enable_bootanimation": false
+            }
+        }
+    ]
+}
+  )"""";
+
+  Json::Value json_configs;
+  std::string json_text(test_string);
+
+  EXPECT_TRUE(ParseJsonString(json_text, json_configs));
+  auto serialized_data = ParseCvdConfigs(json_configs);
+  EXPECT_TRUE(serialized_data.ok()) << serialized_data.error().Trace();
+  EXPECT_TRUE(
+      FindConfig(*serialized_data, R"(--enable_bootanimation=true,false)"))
+      << "enable_bootanimation flag is missing or wrongly formatted";
+}
+
+TEST(BootFlagsParserTest, ParseTwoInstancesBootAnimationFlagFullJson) {
+  const char* test_string = R""""(
+{
+    "instances" :
+    [
+        {
+            "boot": {
+                "enable_bootanimation": false
+            }
+        },
+        {
+            "boot": {
+                "enable_bootanimation": false
+            }
+        }
+    ]
+}
+  )"""";
+
+  Json::Value json_configs;
+  std::string json_text(test_string);
+
+  EXPECT_TRUE(ParseJsonString(json_text, json_configs));
+  auto serialized_data = ParseCvdConfigs(json_configs);
+  EXPECT_TRUE(serialized_data.ok()) << serialized_data.error().Trace();
+  EXPECT_TRUE(
+      FindConfig(*serialized_data, R"(--enable_bootanimation=false,false)"))
+      << "enable_bootanimation flag is missing or wrongly formatted";
 }
 
 TEST(BootFlagsParserTest, ParseTwoInstancesSerialNumberFlagEmptyJson) {
@@ -112,15 +195,14 @@ TEST(BootFlagsParserTest, ParseTwoInstancesSerialNumberFlagEmptyJson) {
 }
   )"""";
 
-  std::vector<std::string> serialized_data;
   Json::Value json_configs;
-  std::string strjson(test_string);
+  std::string json_text(test_string);
 
-  EXPECT_TRUE(ParseJsonString(strjson, json_configs));
-  EXPECT_TRUE(ParseCvdConfigs(json_configs, serialized_data).ok());
-  EXPECT_TRUE(
-      FindConfig(serialized_data,
-                 R"(--serial_number=CUTTLEFISHCVD01,CUTTLEFISHCVD01)"));
+  EXPECT_TRUE(ParseJsonString(json_text, json_configs));
+  auto serialized_data = ParseCvdConfigs(json_configs);
+  EXPECT_TRUE(serialized_data.ok());
+  EXPECT_TRUE(FindConfig(*serialized_data,
+                         R"(--serial_number=CUTTLEFISHCVD01,CUTTLEFISHCVD01)"));
 }
 
 TEST(BootFlagsParserTest, ParseTwoInstancesSerialNumberFlagPartialJson) {
@@ -145,15 +227,14 @@ TEST(BootFlagsParserTest, ParseTwoInstancesSerialNumberFlagPartialJson) {
 }
   )"""";
 
-  std::vector<std::string> serialized_data;
   Json::Value json_configs;
-  std::string strjson(test_string);
+  std::string json_text(test_string);
 
-  EXPECT_TRUE(ParseJsonString(strjson, json_configs));
-  EXPECT_TRUE(ParseCvdConfigs(json_configs, serialized_data).ok());
-  EXPECT_TRUE(
-      FindConfig(serialized_data,
-                 R"(--serial_number=CUTTLEFISHCVD01,CUTTLEFISHCVD101)"));
+  EXPECT_TRUE(ParseJsonString(json_text, json_configs));
+  auto serialized_data = ParseCvdConfigs(json_configs);
+  EXPECT_TRUE(serialized_data.ok());
+  EXPECT_TRUE(FindConfig(
+      *serialized_data, R"(--serial_number=CUTTLEFISHCVD01,CUTTLEFISHCVD101)"));
 }
 
 TEST(BootFlagsParserTest, ParseTwoInstancesSerialNumberFlagFullJson) {
@@ -179,14 +260,14 @@ TEST(BootFlagsParserTest, ParseTwoInstancesSerialNumberFlagFullJson) {
 }
   )"""";
 
-  std::vector<std::string> serialized_data;
   Json::Value json_configs;
-  std::string strjson(test_string);
+  std::string json_text(test_string);
 
-  EXPECT_TRUE(ParseJsonString(strjson, json_configs));
-  EXPECT_TRUE(ParseCvdConfigs(json_configs, serialized_data).ok());
+  EXPECT_TRUE(ParseJsonString(json_text, json_configs));
+  auto serialized_data = ParseCvdConfigs(json_configs);
+  EXPECT_TRUE(serialized_data.ok());
   EXPECT_TRUE(
-      FindConfig(serialized_data,
+      FindConfig(*serialized_data,
                  R"(--serial_number=CUTTLEFISHCVD101,CUTTLEFISHCVD102)"));
 }
 
@@ -203,13 +284,13 @@ TEST(BootFlagsParserTest, ParseTwoInstancesKernelCmdFlagEmptyJson) {
 }
   )"""";
 
-  std::vector<std::string> serialized_data;
   Json::Value json_configs;
-  std::string strjson(test_string);
+  std::string json_text(test_string);
 
-  EXPECT_TRUE(ParseJsonString(strjson, json_configs));
-  EXPECT_TRUE(ParseCvdConfigs(json_configs, serialized_data).ok());
-  EXPECT_TRUE(FindConfig(serialized_data, R"(--extra_kernel_cmdline=,)"));
+  EXPECT_TRUE(ParseJsonString(json_text, json_configs));
+  auto serialized_data = ParseCvdConfigs(json_configs);
+  EXPECT_TRUE(serialized_data.ok());
+  EXPECT_TRUE(FindConfig(*serialized_data, R"(--extra_kernel_cmdline=,)"));
 }
 
 TEST(BootFlagsParserTest, ParseTwoInstancesKernelCmdFlagPartialJson) {
@@ -234,15 +315,15 @@ TEST(BootFlagsParserTest, ParseTwoInstancesKernelCmdFlagPartialJson) {
 }
   )"""";
 
-  std::vector<std::string> serialized_data;
   Json::Value json_configs;
-  std::string strjson(test_string);
+  std::string json_text(test_string);
 
-  EXPECT_TRUE(ParseJsonString(strjson, json_configs));
-  EXPECT_TRUE(ParseCvdConfigs(json_configs, serialized_data).ok());
-  EXPECT_TRUE(FindConfig(
-      serialized_data,
-      R"(--extra_kernel_cmdline=,androidboot.selinux=permissive)"));
+  EXPECT_TRUE(ParseJsonString(json_text, json_configs));
+  auto serialized_data = ParseCvdConfigs(json_configs);
+  EXPECT_TRUE(serialized_data.ok());
+  EXPECT_TRUE(
+      FindConfig(*serialized_data,
+                 R"(--extra_kernel_cmdline=,androidboot.selinux=permissive)"));
 }
 
 TEST(BootFlagsParserTest, ParseTwoInstancesKernelCmdFlagFullJson) {
@@ -268,14 +349,14 @@ TEST(BootFlagsParserTest, ParseTwoInstancesKernelCmdFlagFullJson) {
 }
   )"""";
 
-  std::vector<std::string> serialized_data;
   Json::Value json_configs;
-  std::string strjson(test_string);
+  std::string json_text(test_string);
 
-  EXPECT_TRUE(ParseJsonString(strjson, json_configs));
-  EXPECT_TRUE(ParseCvdConfigs(json_configs, serialized_data).ok());
+  EXPECT_TRUE(ParseJsonString(json_text, json_configs));
+  auto serialized_data = ParseCvdConfigs(json_configs);
+  EXPECT_TRUE(serialized_data.ok());
   EXPECT_TRUE(FindConfig(
-      serialized_data,
+      *serialized_data,
       R"(--extra_kernel_cmdline=androidboot.selinux=permissive,lpm_levels.sleep_disabled=1)"));
 }
 
