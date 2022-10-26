@@ -32,17 +32,17 @@ SYNOPSIS
 
 RESOURCES
     cvd (default)
-        Cuttlefish Virtual Devices 
-        
+        Cuttlefish Virtual Devices.
+
     host
-        Host machines where CVDs live. 
+        Host machines where CVDs live.
 
 COMMANDS
     create
         Create a resource.
 
     list
-        List the resources. 
+        List the resources.
 )";
 
 // General flags.
@@ -71,7 +71,7 @@ namespace {
 //
 // Create host.
 //
-int CommandCreateHostMain() {
+int CommandCreateHostMain(const std::vector<std::string>&) {
   auto http_client =
       FLAGS_use_sso_client
           ? std::unique_ptr<HttpClient>(new http_client::SsoClient())
@@ -95,7 +95,7 @@ int CommandCreateHostMain() {
 //
 // List hosts.
 //
-int CommandListHostsMain() {
+int CommandListHostsMain(const std::vector<std::string>&) {
   auto http_client =
       FLAGS_use_sso_client
           ? std::unique_ptr<HttpClient>(new http_client::SsoClient())
@@ -111,8 +111,41 @@ int CommandListHostsMain() {
     std::cerr << "~ No hosts found ~" << std::endl;
     return 0;
   }
-  for (auto host : *hosts) {
+  for (const std::string& host : *hosts) {
     std::cout << host << std::endl;
+  }
+  return 0;
+}
+
+//
+// Delete host.
+//
+int CommandDeleteHostMain(const std::vector<std::string>& args) {
+  if (args.empty()) {
+    std::cerr << "Missing host name." << std::endl;
+    return -1;
+  }
+  auto http_client =
+      FLAGS_use_sso_client
+          ? std::unique_ptr<HttpClient>(new http_client::SsoClient())
+          : HttpClient::CurlClient();
+  CloudOrchestratorApi api(FLAGS_service_url, FLAGS_zone, *http_client);
+  auto action = DeleteHostsAction(api, args);
+  auto action_result = action->Execute();
+  if (!action_result.ok()) {
+    std::cerr << action_result.error().Message();
+    return -1;
+  }
+  bool any_del_had_error = false;
+  for (auto& del_instance_result : *action_result) {
+    if (!del_instance_result.ok()) {
+      std::cerr << del_instance_result.error().Message() << std::endl
+                << std::endl;
+      any_del_had_error = true;
+    }
+  }
+  if (any_del_had_error) {
+    return -1;
   }
   return 0;
 }
@@ -133,7 +166,7 @@ void PrintCVDs(const std::string& host, const std::vector<std::string>& cvds) {
 //
 // Create cvd.
 //
-int CommandCreateCVDMain() {
+int CommandCreateCVDMain(const std::vector<std::string>&) {
   if (FLAGS_host == "") {
     std::cerr
         << "Creating a cvd instance without a host is not implemented yet.";
@@ -200,7 +233,7 @@ int CommandCreateCVDMain() {
 //           display: 1080x1920 (240)
 //           webrtcstream_url: https://foo.com/.../client.html
 
-int CommandListCVDsMain() {
+int CommandListCVDsMain(const std::vector<std::string>&) {
   auto http_client =
       FLAGS_use_sso_client
           ? std::unique_ptr<HttpClient>(new http_client::SsoClient())
@@ -242,13 +275,17 @@ constexpr char kResourceCVD[] = "cvd";
 
 constexpr char kCommandList[] = "list";
 constexpr char kCommandCreate[] = "create";
+constexpr char kCommandDelete[] = "delete";
 
-std::map<std::string, std::map<std::string, std::function<int()>>>
+std::map<
+    std::string,
+    std::map<std::string, std::function<int(const std::vector<std::string>&)>>>
     commands_map = {
         {kResourceHost,
          {
              {kCommandCreate, CommandCreateHostMain},
              {kCommandList, CommandListHostsMain},
+             {kCommandDelete, CommandDeleteHostMain},
          }},
         {kResourceCVD,
          {
@@ -293,7 +330,7 @@ int Main(int argc, char** argv) {
               << " \"" << resource << "\" resource.";
     return -1;
   }
-  return commands_map[resource][command]();
+  return commands_map[resource][command](args);
 }
 
 }  // namespace
