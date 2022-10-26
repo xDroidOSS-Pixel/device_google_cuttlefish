@@ -558,6 +558,10 @@ Result<std::vector<KernelConfig>> ReadKernelConfig() {
     }
     kernel_config.bootconfig_supported =
         config.find("\nCONFIG_BOOT_CONFIG=y") != std::string::npos;
+    // Once all Cuttlefish kernel versions are at least 5.15, this code can be
+    // removed. CONFIG_CRYPTO_HCTR2=y will always be set.
+    kernel_config.hctr2_supported =
+        config.find("\nCONFIG_CRYPTO_HCTR2=y") != std::string::npos;
 
     unlink(ikconfig_path.c_str());
     kernel_configs.push_back(kernel_config);
@@ -595,6 +599,8 @@ CuttlefishConfig InitializeCuttlefishConfiguration(
   // TODO(weihsu), b/250988697: these should move to instance,
   // currently use instance[0] to setup for all instances
   tmp_config_obj.set_bootconfig_supported(kernel_configs[0].bootconfig_supported);
+  tmp_config_obj.set_filename_encryption_mode(
+      kernel_configs[0].hctr2_supported ? "hctr2" : "cts");
   auto vmm = GetVmManager(vm_manager_vec[0], kernel_configs[0].target_arch);
   if (!vmm) {
     LOG(FATAL) << "Invalid vm_manager: " << vm_manager_vec[0];
@@ -799,8 +805,6 @@ CuttlefishConfig InitializeCuttlefishConfiguration(
 
   tmp_config_obj.set_protected_vm(FLAGS_protected_vm);
 
-  tmp_config_obj.set_userdata_format(FLAGS_userdata_format);
-
   // old flags but vectorized for multi-device instances
   std::vector<std::string> gnss_file_paths = android::base::Split(FLAGS_gnss_file_path, ",");
   std::vector<std::string> fixed_location_file_paths =
@@ -822,6 +826,8 @@ CuttlefishConfig InitializeCuttlefishConfiguration(
   std::vector<std::string> gdb_port_vec = android::base::Split(FLAGS_gdb_port, ",");
   std::vector<std::string> setupwizard_mode_vec =
       android::base::Split(FLAGS_setupwizard_mode, ",");
+  std::vector<std::string> userdata_format_vec =
+      android::base::Split(FLAGS_userdata_format, ",");
 
   // new instance specific flags (moved from common flags)
   std::vector<std::string> gem5_binary_dirs =
@@ -1038,6 +1044,12 @@ CuttlefishConfig InitializeCuttlefishConfiguration(
       instance.set_setupwizard_mode(setupwizard_mode_vec[0]);
     } else {
       instance.set_setupwizard_mode(setupwizard_mode_vec[instance_index]);
+    }
+
+    if (instance_index >= userdata_format_vec.size()) {
+      instance.set_userdata_format(userdata_format_vec[0]);
+    } else {
+      instance.set_userdata_format(userdata_format_vec[instance_index]);
     }
 
     int camera_server_port;

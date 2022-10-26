@@ -748,14 +748,15 @@ void CuttlefishConfig::set_bootconfig_supported(bool bootconfig_supported) {
   (*dictionary_)[kBootconfigSupported] = bootconfig_supported;
 }
 
-static constexpr char kUserdataFormat[] = "userdata_format";
-std::string CuttlefishConfig::userdata_format() const {
-  return (*dictionary_)[kUserdataFormat].asString();
+static constexpr char kFilenameEncryptionMode[] = "filename_encryption_mode";
+std::string CuttlefishConfig::filename_encryption_mode() const {
+  return (*dictionary_)[kFilenameEncryptionMode].asString();
 }
-void CuttlefishConfig::set_userdata_format(const std::string& userdata_format) {
-  auto fmt = userdata_format;
+void CuttlefishConfig::set_filename_encryption_mode(
+    const std::string& filename_encryption_mode) {
+  auto fmt = filename_encryption_mode;
   std::transform(fmt.begin(), fmt.end(), fmt.begin(), ::tolower);
-  (*dictionary_)[kUserdataFormat] = fmt;
+  (*dictionary_)[kFilenameEncryptionMode] = fmt;
 }
 
 static constexpr char kApImageDevPath[] = "ap_image_dev_path";
