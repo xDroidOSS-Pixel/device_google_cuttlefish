@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "common/libs/utils/environment.h"
+#include "common/libs/utils/result.h"
 #include "host/libs/config/config_fragment.h"
 
 namespace Json {
@@ -326,9 +327,6 @@ class CuttlefishConfig {
   void set_bootconfig_supported(bool bootconfig_supported);
   bool bootconfig_supported() const;
 
-  void set_userdata_format(const std::string& userdata_format);
-  std::string userdata_format() const;
-
   void set_filename_encryption_mode(const std::string& userdata_format);
   std::string filename_encryption_mode() const;
 
@@ -527,6 +525,7 @@ class CuttlefishConfig {
     int memory_mb() const;
     int ddr_mem_mb() const;
     std::string setupwizard_mode() const;
+    std::string userdata_format() const;
 
     // system image files
     std::string boot_image() const;
@@ -617,7 +616,8 @@ class CuttlefishConfig {
     void set_display_configs(const std::vector<DisplayConfig>& display_configs);
     void set_memory_mb(int memory_mb);
     void set_ddr_mem_mb(int ddr_mem_mb);
-    void set_setupwizard_mode(const std::string& title);
+    Result<void> set_setupwizard_mode(const std::string& title);
+    void set_userdata_format(const std::string& userdata_format);
 
     // system image files
     void set_boot_image(const std::string& boot_image);
