@@ -23,7 +23,7 @@ namespace cuttlefish {
 namespace http_client {
 
 TEST(SsoClientTest, GetToStringSucceeds) {
-  std::string stdout =
+  std::string stdout_ =
       "HTTP/1.1 222 Bad Request\r\n"
       "Content-Type: application/json\r\n"
       "Vary: Accept-Encoding\r\n"
@@ -36,46 +36,46 @@ TEST(SsoClientTest, GetToStringSucceeds) {
       "\n";
   auto exec = [&](Command&&, const std::string*, std::string* out, std::string*,
                   SubprocessOptions) {
-    *out = stdout;
+    *out = stdout_;
     return 0;
   };
   SsoClient client(exec);
 
   auto result = client.GetToString("https://some.url");
 
-  EXPECT_TRUE(result.ok());
+  EXPECT_TRUE(result.ok()) << result.error().Trace();
   EXPECT_EQ(result->data, "foo");
   EXPECT_EQ(result->http_code, 222);
 }
 
 TEST(SsoClientTest, GetToStringSucceedsEmptyBody) {
-  std::string stdout =
+  std::string stdout_ =
       "HTTP/1.1 222 OK\r\n"
       "Content-Type: application/json\r\n"
       "\r\n"
       "\n";
   auto exec = [&](Command&&, const std::string*, std::string* out, std::string*,
                   SubprocessOptions) {
-    *out = stdout;
+    *out = stdout_;
     return 0;
   };
   SsoClient client(exec);
 
   auto result = client.GetToString("https://some.url");
 
-  EXPECT_TRUE(result.ok());
+  EXPECT_TRUE(result.ok()) << result.error().Trace();
   EXPECT_EQ(result->data, "");
   EXPECT_EQ(result->http_code, 222);
 }
 
 TEST(SsoClientTest, GetToStringNoBody) {
-  std::string stdout =
+  std::string stdout_ =
       "HTTP/1.1 502 Bad Gateway\r\n"
       "Content-Type: application/json\r\n"
       "\r\n";
   auto exec = [&](Command&&, const std::string*, std::string* out, std::string*,
                   SubprocessOptions) {
-    *out = stdout;
+    *out = stdout_;
     return 0;
   };
   SsoClient client(exec);
@@ -87,10 +87,12 @@ TEST(SsoClientTest, GetToStringNoBody) {
   EXPECT_EQ(result->http_code, 502);
 }
 
-constexpr char kBashScriptPrefix[] =
-    "#!/bin/bash\n\n/usr/bin/sso_client \\\n--use_master_cookie "
-    "\\\n--request_timeout=300 "
-    "\\\n--dump_header ";
+constexpr char kBashScriptPrefix[] = R"(#!/bin/bash
+
+/usr/bin/sso_client \
+--use_master_cookie \
+--request_timeout=300 \
+--dump_header \)";
 
 TEST(SsoClientTest, GetToStringVerifyCommandArgs) {
   std::string cmd_as_bash_script;
@@ -103,9 +105,10 @@ TEST(SsoClientTest, GetToStringVerifyCommandArgs) {
 
   client.GetToString("https://some.url");
 
-  EXPECT_EQ(cmd_as_bash_script,
-            std::string(kBashScriptPrefix) +
-                "\\\n--url=https://some.url \\\n--method=GET");
+  std::string expected = std::string(kBashScriptPrefix) + R"(
+--url=https://some.url \
+--method=GET)";
+  EXPECT_EQ(cmd_as_bash_script, expected);
 }
 
 TEST(SsoClientTest, PostToStringVerifyCommandArgs) {
@@ -119,9 +122,11 @@ TEST(SsoClientTest, PostToStringVerifyCommandArgs) {
 
   client.PostToString("https://some.url", "foo");
 
-  EXPECT_EQ(cmd_as_bash_script,
-            std::string(kBashScriptPrefix) +
-                "\\\n--url=https://some.url \\\n--method=POST \\\n--data=foo");
+  std::string expected = std::string(kBashScriptPrefix) + R"(
+--url=https://some.url \
+--method=POST \
+--data=foo)";
+  EXPECT_EQ(cmd_as_bash_script, expected);
 }
 
 TEST(SsoClientTest, PostToStringEmptyDataVerifyCommandArgs) {
@@ -135,9 +140,10 @@ TEST(SsoClientTest, PostToStringEmptyDataVerifyCommandArgs) {
 
   client.PostToString("https://some.url", "");
 
-  EXPECT_EQ(cmd_as_bash_script,
-            std::string(kBashScriptPrefix) +
-                "\\\n--url=https://some.url \\\n--method=POST");
+  std::string expected = std::string(kBashScriptPrefix) + R"(
+--url=https://some.url \
+--method=POST)";
+  EXPECT_EQ(cmd_as_bash_script, expected);
 }
 
 TEST(SsoClientTest, DeleteToStringVerifyCommandArgs) {
@@ -151,16 +157,17 @@ TEST(SsoClientTest, DeleteToStringVerifyCommandArgs) {
 
   client.DeleteToString("https://some.url");
 
-  EXPECT_EQ(cmd_as_bash_script,
-            std::string(kBashScriptPrefix) +
-                "\\\n--url=https://some.url \\\n--method=DELETE");
+  std::string expected = std::string(kBashScriptPrefix) + R"(
+--url=https://some.url \
+--method=DELETE)";
+  EXPECT_EQ(cmd_as_bash_script, expected);
 }
 
 TEST(SsoClientTest, GetToStringFailsInvalidResponseFormat) {
-  std::string stdout = "E0719 13:45:32.891177 2702210 foo failed";
+  std::string stdout_ = "E0719 13:45:32.891177 2702210 foo failed";
   auto exec = [&](Command&&, const std::string*, std::string* out, std::string*,
                   SubprocessOptions) {
-    *out = stdout;
+    *out = stdout_;
     return 0;
   };
   SsoClient client(exec);
@@ -181,12 +188,12 @@ TEST(SsoClientTest, GetToStringFailsEmptyStdout) {
 }
 
 TEST(SsoClientTest, GetToStringFailsExecutionFails) {
-  std::string stdout = "foo";
-  std::string stderr = "bar";
+  std::string stdout_ = "foo";
+  std::string stderr_ = "bar";
   auto exec = [&](Command&&, const std::string*, std::string* out,
                   std::string* err, SubprocessOptions) {
-    *out = stdout;
-    *err = stderr;
+    *out = stdout_;
+    *err = stderr_;
     return -1;
   };
   SsoClient client(exec);
@@ -194,8 +201,8 @@ TEST(SsoClientTest, GetToStringFailsExecutionFails) {
   auto result = client.GetToString("https://some.url");
 
   EXPECT_FALSE(result.ok());
-  EXPECT_TRUE(result.error().Message().find(stdout) != std::string::npos);
-  EXPECT_TRUE(result.error().Message().find(stderr) != std::string::npos);
+  EXPECT_TRUE(result.error().Message().find(stdout_) != std::string::npos);
+  EXPECT_TRUE(result.error().Message().find(stderr_) != std::string::npos);
 }
 
 }  // namespace http_client
