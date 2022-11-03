@@ -175,9 +175,6 @@ class CuttlefishConfig {
   void set_boot_slot(const std::string& boot_slot);
   std::string boot_slot() const;
 
-  void set_guest_enforce_security(bool guest_enforce_security);
-  bool guest_enforce_security() const;
-
   void set_enable_host_bluetooth(bool enable_host_bluetooth);
   bool enable_host_bluetooth() const;
 
@@ -458,7 +455,8 @@ class CuttlefishConfig {
 
     enum class BootFlow {
       Android,
-      Linux
+      Linux,
+      Fuchsia
     };
 
     BootFlow boot_flow() const;
@@ -533,12 +531,14 @@ class CuttlefishConfig {
     int ddr_mem_mb() const;
     std::string setupwizard_mode() const;
     std::string userdata_format() const;
+    bool guest_enforce_security() const;
 
     // android artifacts
     std::string boot_image() const;
     std::string new_boot_image() const;
     std::string init_boot_image() const;
     std::string data_image() const;
+    std::string new_data_image() const;
     std::string super_image() const;
     std::string misc_image() const;
     std::string new_misc_image() const;
@@ -556,6 +556,10 @@ class CuttlefishConfig {
     std::string linux_kernel_path() const;
     std::string linux_initramfs_path() const;
     std::string linux_root_image() const;
+
+    std::string fuchsia_zedboot_path() const;
+    std::string fuchsia_multiboot_bin_path() const;
+    std::string fuchsia_root_image() const;
 
     int blank_metadata_image_mb() const;
     int blank_sdcard_image_mb() const;
@@ -630,12 +634,14 @@ class CuttlefishConfig {
     void set_ddr_mem_mb(int ddr_mem_mb);
     Result<void> set_setupwizard_mode(const std::string& title);
     void set_userdata_format(const std::string& userdata_format);
+    void set_guest_enforce_security(bool guest_enforce_security);
 
     // system image files
     void set_boot_image(const std::string& boot_image);
     void set_new_boot_image(const std::string& new_boot_image);
     void set_init_boot_image(const std::string& init_boot_image);
     void set_data_image(const std::string& data_image);
+    void set_new_data_image(const std::string& new_data_image);
     void set_super_image(const std::string& super_image);
     void set_misc_image(const std::string& misc_image);
     void set_new_misc_image(const std::string& new_misc_image);
@@ -649,6 +655,9 @@ class CuttlefishConfig {
     void set_linux_kernel_path(const std::string& linux_kernel_path);
     void set_linux_initramfs_path(const std::string& linux_initramfs_path);
     void set_linux_root_image(const std::string& linux_root_image);
+    void set_fuchsia_zedboot_path(const std::string& fuchsia_zedboot_path);
+    void set_fuchsia_multiboot_bin_path(const std::string& fuchsia_multiboot_bin_path);
+    void set_fuchsia_root_image(const std::string& fuchsia_root_image);
     void set_blank_metadata_image_mb(int blank_metadata_image_mb);
     void set_blank_sdcard_image_mb(int blank_sdcard_image_mb);
     void set_bootloader(const std::string& bootloader);
