@@ -99,6 +99,14 @@ void CuttlefishConfig::MutableInstanceSpecific::set_data_image(
     const std::string& data_image) {
   (*Dictionary())[kDataImage] = data_image;
 }
+static constexpr char kNewDataImage[] = "new_data_image";
+std::string CuttlefishConfig::InstanceSpecific::new_data_image() const {
+  return (*Dictionary())[kNewDataImage].asString();
+}
+void CuttlefishConfig::MutableInstanceSpecific::set_new_data_image(
+    const std::string& new_data_image) {
+  (*Dictionary())[kNewDataImage] = new_data_image;
+}
 static constexpr char kSuperImage[] = "super_image";
 std::string CuttlefishConfig::InstanceSpecific::super_image() const {
   return (*Dictionary())[kSuperImage].asString();
@@ -202,6 +210,30 @@ std::string CuttlefishConfig::InstanceSpecific::linux_root_image() const {
 void CuttlefishConfig::MutableInstanceSpecific::set_linux_root_image(
     const std::string& linux_root_image) {
   (*Dictionary())[kLinuxRootImage] = linux_root_image;
+}
+static constexpr char kFuchsiaZedbootPath[] = "fuchsia_zedboot_path";
+void CuttlefishConfig::MutableInstanceSpecific::set_fuchsia_zedboot_path(
+    const std::string& fuchsia_zedboot_path) {
+  (*Dictionary())[kFuchsiaZedbootPath] = fuchsia_zedboot_path;
+}
+std::string CuttlefishConfig::InstanceSpecific::fuchsia_zedboot_path() const {
+  return (*Dictionary())[kFuchsiaZedbootPath].asString();
+}
+static constexpr char kFuchsiaMultibootBinPath[] = "multiboot_bin_path";
+void CuttlefishConfig::MutableInstanceSpecific::set_fuchsia_multiboot_bin_path(
+    const std::string& fuchsia_multiboot_bin_path) {
+  (*Dictionary())[kFuchsiaMultibootBinPath] = fuchsia_multiboot_bin_path;
+}
+std::string CuttlefishConfig::InstanceSpecific::fuchsia_multiboot_bin_path() const {
+  return (*Dictionary())[kFuchsiaMultibootBinPath].asString();
+}
+static constexpr char kFuchsiaRootImage[] = "fuchsia_root_image";
+void CuttlefishConfig::MutableInstanceSpecific::set_fuchsia_root_image(
+    const std::string& fuchsia_root_image) {
+  (*Dictionary())[kFuchsiaRootImage] = fuchsia_root_image;
+}
+std::string CuttlefishConfig::InstanceSpecific::fuchsia_root_image() const {
+  return (*Dictionary())[kFuchsiaRootImage].asString();
 }
 static constexpr char kBlankMetadataImageMb[] = "blank_metadata_image_mb";
 int CuttlefishConfig::InstanceSpecific::blank_metadata_image_mb() const {
@@ -423,6 +455,14 @@ void CuttlefishConfig::MutableInstanceSpecific::set_userdata_format(const std::s
   (*Dictionary())[kUserdataFormat] = fmt;
 }
 
+static constexpr char kGuestEnforceSecurity[] = "guest_enforce_security";
+void CuttlefishConfig::MutableInstanceSpecific::set_guest_enforce_security(bool guest_enforce_security) {
+  (*Dictionary())[kGuestEnforceSecurity] = guest_enforce_security;
+}
+bool CuttlefishConfig::InstanceSpecific::guest_enforce_security() const {
+  return (*Dictionary())[kGuestEnforceSecurity].asBool();
+}
+
 static constexpr char kDisplayConfigs[] = "display_configs";
 static constexpr char kXRes[] = "x_res";
 static constexpr char kYRes[] = "y_res";
@@ -572,12 +612,19 @@ CuttlefishConfig::InstanceSpecific::BootFlow CuttlefishConfig::InstanceSpecific:
     || !linux_initramfs_path().empty()
     || !linux_root_image().empty();
 
+  const bool fuchsia_flow_used = !fuchsia_zedboot_path().empty()
+    || !fuchsia_root_image().empty()
+    || !fuchsia_multiboot_bin_path().empty();
+
   if (linux_flow_used) {
     return BootFlow::Linux;
-  } else {
-    return BootFlow::Android;
   }
-}
+  if (fuchsia_flow_used) {
+    return BootFlow::Fuchsia;
+  }
+
+  return BootFlow::Android;
+ }
 
 std::string CuttlefishConfig::InstanceSpecific::mobile_bridge_name() const {
   return (*Dictionary())[kMobileBridgeName].asString();
