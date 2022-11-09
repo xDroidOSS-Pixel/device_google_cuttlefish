@@ -99,14 +99,6 @@ void CuttlefishConfig::MutableInstanceSpecific::set_data_image(
     const std::string& data_image) {
   (*Dictionary())[kDataImage] = data_image;
 }
-static constexpr char kNewDataImage[] = "new_data_image";
-std::string CuttlefishConfig::InstanceSpecific::new_data_image() const {
-  return (*Dictionary())[kNewDataImage].asString();
-}
-void CuttlefishConfig::MutableInstanceSpecific::set_new_data_image(
-    const std::string& new_data_image) {
-  (*Dictionary())[kNewDataImage] = new_data_image;
-}
 static constexpr char kSuperImage[] = "super_image";
 std::string CuttlefishConfig::InstanceSpecific::super_image() const {
   return (*Dictionary())[kSuperImage].asString();
@@ -234,6 +226,14 @@ void CuttlefishConfig::MutableInstanceSpecific::set_fuchsia_root_image(
 }
 std::string CuttlefishConfig::InstanceSpecific::fuchsia_root_image() const {
   return (*Dictionary())[kFuchsiaRootImage].asString();
+}
+static constexpr char kCustomPartitionPath[] = "custom_partition_path";
+void CuttlefishConfig::MutableInstanceSpecific::set_custom_partition_path(
+    const std::string& custom_partition_path) {
+  (*Dictionary())[kCustomPartitionPath] = custom_partition_path;
+}
+std::string CuttlefishConfig::InstanceSpecific::custom_partition_path() const {
+  return (*Dictionary())[kCustomPartitionPath].asString();
 }
 static constexpr char kBlankMetadataImageMb[] = "blank_metadata_image_mb";
 int CuttlefishConfig::InstanceSpecific::blank_metadata_image_mb() const {

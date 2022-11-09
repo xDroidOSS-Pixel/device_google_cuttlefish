@@ -98,6 +98,10 @@ DEFINE_string(fuchsia_multiboot_bin_path, CF_DEFAULTS_FUCHSIA_MULTIBOOT_BIN_PATH
 DEFINE_string(fuchsia_root_image, CF_DEFAULTS_FUCHSIA_ROOT_IMAGE,
               "Location of fuchsia root filesystem image for cuttlefish otheros flow.");
 
+DEFINE_string(custom_partition_path, CF_DEFAULTS_CUSTOM_PARTITION_PATH,
+              "Location of custom image that will be passed as a \"custom\" partition"
+              "to rootfs and can be used by /dev/block/by-name/custom");
+
 DEFINE_string(blank_metadata_image_mb, CF_DEFAULTS_BLANK_METADATA_IMAGE_MB,
               "The size of the blank metadata image to generate, MB.");
 DEFINE_string(
@@ -298,7 +302,7 @@ std::vector<ImagePartition> android_composite_disk_config(
   });
   partitions.push_back(ImagePartition{
       .label = "userdata",
-      .image_file_path = AbsolutePath(instance.new_data_image()),
+      .image_file_path = AbsolutePath(instance.data_image()),
       .read_only = FLAGS_use_overlay,
   });
   partitions.push_back(ImagePartition{
@@ -306,6 +310,14 @@ std::vector<ImagePartition> android_composite_disk_config(
       .image_file_path = AbsolutePath(instance.new_metadata_image()),
       .read_only = FLAGS_use_overlay,
   });
+  const auto custom_partition_path = instance.custom_partition_path();
+  if (!custom_partition_path.empty()) {
+    partitions.push_back(ImagePartition{
+        .label = "custom",
+        .image_file_path = AbsolutePath(custom_partition_path),
+        .read_only = FLAGS_use_overlay,
+    });
+  }
 
   // TODO: remove after moving ap to otheros flow
   if (!FLAGS_ap_rootfs_image.empty()) {
@@ -541,11 +553,7 @@ class Gem5ImageUnpacker : public SetupFeature {
               "Failed to extract the vendor boot image");
 
     // Assume the user specified a kernel manually which is a vmlinux
-    std::ofstream kernel(unpack_dir + "/kernel", std::ios_base::binary |
-                                                 std::ios_base::trunc);
-    std::ifstream vmlinux(instance_.kernel_path(), std::ios_base::binary);
-    kernel << vmlinux.rdbuf();
-    kernel.close();
+    CF_EXPECT(cuttlefish::Copy(instance_.kernel_path(), unpack_dir + "/kernel"));
 
     // Gem5 needs the bootloader binary to be a specific directory structure
     // to find it. Create a 'binaries' directory and copy it into there
@@ -554,23 +562,15 @@ class Gem5ImageUnpacker : public SetupFeature {
                     S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == 0 ||
                   errno == EEXIST,
               "\"" << binaries_dir << "\": " << strerror(errno));
-    std::ofstream bootloader(
-        binaries_dir + "/" + cpp_basename(instance_.bootloader()),
-        std::ios_base::binary | std::ios_base::trunc);
-    std::ifstream src_bootloader(instance_.bootloader(), std::ios_base::binary);
-    bootloader << src_bootloader.rdbuf();
-    bootloader.close();
+    CF_EXPECT(cuttlefish::Copy(instance_.bootloader(),
+        binaries_dir + "/" + cpp_basename(instance_.bootloader())));
 
     // Gem5 also needs the ARM version of the bootloader, even though it
     // doesn't use it. It'll even open it to check it's a valid ELF file.
     // Work around this by copying such a named file from the same directory
-    std::ofstream boot_arm(binaries_dir + "/boot.arm",
-                           std::ios_base::binary | std::ios_base::trunc);
-    std::ifstream src_boot_arm(
+    CF_EXPECT(cuttlefish::Copy(
         cpp_dirname(instance_.bootloader()) + "/boot.arm",
-        std::ios_base::binary);
-    boot_arm << src_boot_arm.rdbuf();
-    boot_arm.close();
+        binaries_dir + "/boot.arm"));
 
     return {};
   }
@@ -1086,6 +1086,9 @@ Result<void> DiskImageFlagsVectorization(CuttlefishConfig& config, const Fetcher
   std::vector<std::string> fuchsia_root_image =
       android::base::Split(FLAGS_fuchsia_root_image, ",");
 
+  std::vector<std::string> custom_partition_path =
+      android::base::Split(FLAGS_custom_partition_path, ",");
+
   std::vector<std::string> bootloader =
       android::base::Split(FLAGS_bootloader, ",");
   std::vector<std::string> initramfs_path =
@@ -1154,6 +1157,11 @@ Result<void> DiskImageFlagsVectorization(CuttlefishConfig& config, const Fetcher
     } else {
       instance.set_super_image(super_image[instance_index]);
     }
+    if (instance_index >= data_image.size()) {
+      instance.set_data_image(data_image[0]);
+    } else {
+      instance.set_data_image(data_image[instance_index]);
+    }
     if (instance_index >= metadata_image.size()) {
       cur_metadata_image = metadata_image[0];
     } else {
@@ -1194,6 +1202,11 @@ Result<void> DiskImageFlagsVectorization(CuttlefishConfig& config, const Fetcher
       instance.set_fuchsia_root_image(fuchsia_root_image[0]);
     } else {
       instance.set_fuchsia_root_image(fuchsia_root_image[instance_index]);
+    }
+    if (instance_index >= custom_partition_path.size()) {
+      instance.set_custom_partition_path(custom_partition_path[0]);
+    } else {
+      instance.set_custom_partition_path(custom_partition_path[instance_index]);
     }
     if (instance_index >= bootloader.size()) {
       instance.set_bootloader(bootloader[0]);
@@ -1251,13 +1264,6 @@ Result<void> DiskImageFlagsVectorization(CuttlefishConfig& config, const Fetcher
       instance.set_new_boot_image(new_boot_image_path.c_str());
     }
 
-    instance.set_new_data_image(const_instance.PerInstancePath("userdata.img"));
-    if (instance_index >= data_image.size()) {
-      instance.set_data_image(data_image[0]);
-    } else {
-      instance.set_data_image(data_image[instance_index]);
-    }
-
     if (cur_kernel_path.size() || cur_initramfs_path.size()) {
       const std::string new_vendor_boot_image_path =
           const_instance.PerInstancePath("vendor_boot_repacked.img");
@@ -1298,15 +1304,6 @@ Result<void> DiskImageFlagsVectorization(CuttlefishConfig& config, const Fetcher
 Result<void> CreateDynamicDiskFiles(const FetcherConfig& fetcher_config,
                                     const CuttlefishConfig& config) {
   for (const auto& instance : config.Instances()) {
-    // b/255384523, copy userdata before modifying it
-    std::ofstream data_dest(instance.new_data_image(),
-                            std::ios_base::binary);
-    std::ifstream data_src(instance.data_image(),
-                           std::ios_base::binary);
-    data_dest << data_src.rdbuf();
-    data_dest.close();
-    data_src.close();
-
     // TODO(schuffelen): Unify this with the other injector created in
     // assemble_cvd.cpp
     fruit::Injector<> injector(DiskChangesComponent, &fetcher_config, &config,
@@ -1330,24 +1327,24 @@ Result<void> CreateDynamicDiskFiles(const FetcherConfig& fetcher_config,
               "instance = \"" << instance.instance_name() << "\"");
 
     // Check if filling in the sparse image would run out of disk space.
-    auto existing_sizes = SparseFileSizes(instance.new_data_image());
+    auto existing_sizes = SparseFileSizes(instance.data_image());
     CF_EXPECT(existing_sizes.sparse_size > 0 || existing_sizes.disk_size > 0,
-              "Unable to determine size of \"" << instance.new_data_image()
+              "Unable to determine size of \"" << instance.data_image()
                                                << "\". Does this file exist?");
-    auto available_space = AvailableSpaceAtPath(instance.new_data_image());
+    auto available_space = AvailableSpaceAtPath(instance.data_image());
     if (available_space <
         existing_sizes.sparse_size - existing_sizes.disk_size) {
       // TODO(schuffelen): Duplicate this check in run_cvd when it can run on a
       // separate machine
       return CF_ERR("Not enough space remaining in fs containing \""
-                    << instance.new_data_image() << "\", wanted "
+                    << instance.data_image() << "\", wanted "
                     << (existing_sizes.sparse_size - existing_sizes.disk_size)
                     << ", got " << available_space);
     } else {
       LOG(DEBUG) << "Available space: " << available_space;
-      LOG(DEBUG) << "Sparse size of \"" << instance.new_data_image()
+      LOG(DEBUG) << "Sparse size of \"" << instance.data_image()
                  << "\": " << existing_sizes.sparse_size;
-      LOG(DEBUG) << "Disk size of \"" << instance.new_data_image()
+      LOG(DEBUG) << "Disk size of \"" << instance.data_image()
                  << "\": " << existing_sizes.disk_size;
     }
 

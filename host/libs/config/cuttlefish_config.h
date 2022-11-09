@@ -538,7 +538,6 @@ class CuttlefishConfig {
     std::string new_boot_image() const;
     std::string init_boot_image() const;
     std::string data_image() const;
-    std::string new_data_image() const;
     std::string super_image() const;
     std::string misc_image() const;
     std::string new_misc_image() const;
@@ -560,6 +559,8 @@ class CuttlefishConfig {
     std::string fuchsia_zedboot_path() const;
     std::string fuchsia_multiboot_bin_path() const;
     std::string fuchsia_root_image() const;
+
+    std::string custom_partition_path() const;
 
     int blank_metadata_image_mb() const;
     int blank_sdcard_image_mb() const;
@@ -641,7 +642,6 @@ class CuttlefishConfig {
     void set_new_boot_image(const std::string& new_boot_image);
     void set_init_boot_image(const std::string& init_boot_image);
     void set_data_image(const std::string& data_image);
-    void set_new_data_image(const std::string& new_data_image);
     void set_super_image(const std::string& super_image);
     void set_misc_image(const std::string& misc_image);
     void set_new_misc_image(const std::string& new_misc_image);
@@ -658,6 +658,7 @@ class CuttlefishConfig {
     void set_fuchsia_zedboot_path(const std::string& fuchsia_zedboot_path);
     void set_fuchsia_multiboot_bin_path(const std::string& fuchsia_multiboot_bin_path);
     void set_fuchsia_root_image(const std::string& fuchsia_root_image);
+    void set_custom_partition_path(const std::string& custom_partition_path);
     void set_blank_metadata_image_mb(int blank_metadata_image_mb);
     void set_blank_sdcard_image_mb(int blank_sdcard_image_mb);
     void set_bootloader(const std::string& bootloader);
