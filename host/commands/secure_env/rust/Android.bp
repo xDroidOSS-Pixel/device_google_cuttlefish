@@ -17,18 +17,30 @@ package {
     default_applicable_licenses: ["Android-Apache-2.0"],
 }
 
-cc_library_host_static {
-    name: "libcvd_selector",
-    srcs: [
-        "creation_analyzer.cpp",
-        "instance_database.cpp",
-        "instance_database_impl.cpp",
-        "instance_database_utils.cpp",
-        "instance_group_record.cpp",
-        "instance_record.cpp",
-        "selector_cmdline_parser.cpp",
-        "selector_flags_parser.cpp",
-        "selector_option_parser_utils.cpp",
+rust_library_host {
+    name: "libkmr_cf",
+    srcs: [ "lib.rs" ],
+    crate_name: "kmr_cf",
+    rustlibs: [
+        "libenv_logger",
+        "libhex",
+        "libkmr_common",
+        "libkmr_crypto_boring",
+        "libkmr_ta",
+        "libkmr_wire",
+        "liblibc",
+        "liblog_rust",
     ],
-    defaults: ["cvd_lib_defaults"],
+}
+
+rust_ffi_host {
+    name: "libkmr_cf_ffi",
+    srcs: [ "ffi.rs" ],
+    crate_name: "kmr_cf_ffi",
+    rustlibs: [
+        "libkmr_cf",
+        "libkmr_wire",
+        "liblibc",
+        "liblog_rust",
+    ],
 }
