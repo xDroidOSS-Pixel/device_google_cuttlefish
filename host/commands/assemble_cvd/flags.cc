@@ -22,7 +22,7 @@
 
 #include <fruit/fruit.h>
 
-#include "common/libs/utils/environment.h"
+#include "common/libs/utils/contains.h"
 #include "common/libs/utils/files.h"
 #include "common/libs/utils/flag_parser.h"
 #include "flags.h"
@@ -95,13 +95,13 @@ DEFINE_string(extra_bootconfig_args, CF_DEFAULTS_EXTRA_BOOTCONFIG_ARGS,
               "Note: overwriting an existing bootconfig argument "
               "requires ':=' instead of '='.");
 DEFINE_string(guest_enforce_security,
-              CF_DEFAULTS_GUEST_ENFORCE_SECURITY?"true":"false",
+              cuttlefish::BoolToString(CF_DEFAULTS_GUEST_ENFORCE_SECURITY),
             "Whether to run in enforcing mode (non permissive).");
 DEFINE_string(memory_mb, std::to_string(CF_DEFAULTS_MEMORY_MB),
              "Total amount of memory available for guest, MB.");
 DEFINE_string(serial_number, CF_DEFAULTS_SERIAL_NUMBER,
               "Serial number to use for the device");
-DEFINE_string(use_random_serial, CF_DEFAULTS_USE_RANDOM_SERIAL?"true":"false",
+DEFINE_string(use_random_serial, cuttlefish::BoolToString(CF_DEFAULTS_USE_RANDOM_SERIAL),
             "Whether to use random serial for the device.");
 DEFINE_string(vm_manager, CF_DEFAULTS_VM_MANAGER,
               "What virtual machine manager to use, one of {qemu_cli, crosvm}");
@@ -166,8 +166,8 @@ DEFINE_string(
  *
  * Also see SetDefaultFlagsForCrosvm()
  */
-DEFINE_bool(
-    enable_sandbox, CF_DEFAULTS_ENABLE_SANDBOX,
+DEFINE_string(
+    enable_sandbox, cuttlefish::BoolToString(CF_DEFAULTS_ENABLE_SANDBOX),
     "Enable crosvm sandbox assuming /var/empty and seccomp directories exist. "
     "--noenable-sandbox will disable crosvm sandbox. "
     "When no option is given, sandbox is disabled if Cuttlefish is running "
@@ -188,9 +188,6 @@ DEFINE_string(webrtc_assets_dir, CF_DEFAULTS_WEBRTC_ASSETS_DIR,
 
 DEFINE_string(webrtc_certs_dir, CF_DEFAULTS_WEBRTC_CERTS_DIR,
               "[Experimental] Path to WebRTC certificates directory.");
-
-DEFINE_string(webrtc_public_ip, CF_DEFAULTS_WEBRTC_PUBLIC_IP,
-              "[Deprecated] Ignored, webrtc can figure out its IP address");
 
 DEFINE_bool(webrtc_enable_adb_websocket,
             CF_DEFAULTS_WEBRTC_ENABLE_ADB_WEBSOCKET,
@@ -321,7 +318,8 @@ DEFINE_string(modem_simulator_sim_type,
               std::to_string(CF_DEFAULTS_MODEM_SIMULATOR_SIM_TYPE),
               "Sim type: 1 for normal, 2 for CtsCarrierApiTestCases");
 
-DEFINE_bool(console, CF_DEFAULTS_CONSOLE, "Enable the serial console");
+DEFINE_string(console, cuttlefish::BoolToString(CF_DEFAULTS_CONSOLE),
+              "Enable the serial console");
 
 DEFINE_bool(enable_kernel_log, CF_DEFAULTS_ENABLE_KERNEL_LOG,
             "Enable kernel console/dmesg logging");
@@ -593,6 +591,56 @@ Result<bool> ParseBool(const std::string& flag_str,
   return false;
 }
 
+Result<std::unordered_map<int, std::string>> CreateNumToWebrtcDeviceIdMap(
+    const CuttlefishConfig& tmp_config_obj,
+    const std::set<std::int32_t>& instance_nums,
+    const std::string& webrtc_device_id_flag) {
+  std::unordered_map<int, std::string> output_map;
+  if (webrtc_device_id_flag.empty()) {
+    for (const auto num : instance_nums) {
+      const auto const_instance = tmp_config_obj.ForInstance(num);
+      output_map[num] = const_instance.instance_name();
+    }
+    return output_map;
+  }
+  auto tokens = android::base::Tokenize(webrtc_device_id_flag, ",");
+  CF_EXPECT(tokens.size() == 1 || tokens.size() == instance_nums.size(),
+            "--webrtc_device_ids provided " << tokens.size()
+                                            << " tokens"
+                                               " while 1 or "
+                                            << instance_nums.size()
+                                            << " is expected.");
+  CF_EXPECT(!tokens.empty(), "--webrtc_device_ids is ill-formatted");
+
+  std::vector<std::string> device_ids;
+  if (tokens.size() != instance_nums.size()) {
+    /* this is only possible when tokens.size() == 1
+     * and instance_nums.size() > 1. The token must include {num}
+     * so that the token pattern can be expanded to multiple instances.
+     */
+    auto device_id = tokens.front();
+    CF_EXPECT(device_id.find("{num}") != std::string::npos,
+              "If one webrtc_device_ids is given for multiple instances, "
+                  << " {num} should be included in webrtc_device_id.");
+    device_ids = std::move(
+        std::vector<std::string>(instance_nums.size(), tokens.front()));
+  }
+
+  if (tokens.size() == instance_nums.size()) {
+    // doesn't have to include {num}
+    device_ids = std::move(tokens);
+  }
+
+  auto itr = device_ids.begin();
+  for (const auto num : instance_nums) {
+    std::string_view device_id_view(itr->data(), itr->size());
+    output_map[num] = android::base::StringReplace(device_id_view, "{num}",
+                                                   std::to_string(num), true);
+    ++itr;
+  }
+  return output_map;
+}
+
 } // namespace
 
 Result<CuttlefishConfig> InitializeCuttlefishConfiguration(
@@ -702,12 +750,6 @@ Result<CuttlefishConfig> InitializeCuttlefishConfiguration(
   tmp_config_obj.set_enable_gpu_udmabuf(FLAGS_enable_gpu_udmabuf);
   tmp_config_obj.set_enable_gpu_angle(FLAGS_enable_gpu_angle);
 
-  // Sepolicy rules need to be updated to support gpu mode. Temporarily disable
-  // auto-enabling sandbox when gpu is enabled (b/152323505).
-  if (tmp_config_obj.gpu_mode() != kGpuModeGuestSwiftshader) {
-    SetCommandLineOptionWithMode("enable_sandbox", "false", SET_FLAGS_DEFAULT);
-  }
-
   if (vmm->ConfigureGraphics(tmp_config_obj).empty()) {
     LOG(FATAL) << "Invalid (gpu_mode=," << FLAGS_gpu_mode <<
                " hwcomposer= " << FLAGS_hwcomposer <<
@@ -722,10 +764,6 @@ Result<CuttlefishConfig> InitializeCuttlefishConfiguration(
 
   tmp_config_obj.set_extra_kernel_cmdline(FLAGS_extra_kernel_cmdline);
   tmp_config_obj.set_extra_bootconfig_args(FLAGS_extra_bootconfig_args);
-
-  if (FLAGS_console) {
-    SetCommandLineOptionWithMode("enable_sandbox", "false", SET_FLAGS_DEFAULT);
-  }
 
   tmp_config_obj.set_enable_kernel_log(FLAGS_enable_kernel_log);
 
@@ -861,6 +899,12 @@ Result<CuttlefishConfig> InitializeCuttlefishConfiguration(
       android::base::Split(FLAGS_modem_simulator_count, ",");
   std::vector<std::string> modem_simulator_sim_type_vec =
       android::base::Split(FLAGS_modem_simulator_sim_type, ",");
+  std::vector<std::string> console_vec =
+      android::base::Split(FLAGS_console, ",");
+
+  // At this time, FLAGS_enable_sandbox comes from SetDefaultFlagsForCrosvm
+  std::vector<std::string> enable_sandbox_vec =
+      android::base::Split(FLAGS_enable_sandbox, ",");
 
   // new instance specific flags (moved from common flags)
   std::vector<std::string> gem5_binary_dirs =
@@ -869,6 +913,8 @@ Result<CuttlefishConfig> InitializeCuttlefishConfiguration(
       android::base::Split(FLAGS_gem5_checkpoint_dir, ",");
   std::vector<std::string> data_policies =
       android::base::Split(FLAGS_data_policy, ",");
+  std::string default_enable_sandbox = "";
+  std::string comma_str = "";
 
   auto instance_nums = InstanceNumsCalculator().FromGlobalGflags().Calculate();
   if (!instance_nums.ok()) {
@@ -893,6 +939,9 @@ Result<CuttlefishConfig> InitializeCuttlefishConfiguration(
   LOG(DEBUG) << "launch rootcanal: " << (FLAGS_rootcanal_instance_num <= 0);
   bool is_first_instance = true;
   int instance_index = 0;
+  auto num_to_webrtc_device_id_flag_map =
+      CF_EXPECT(CreateNumToWebrtcDeviceIdMap(tmp_config_obj, *instance_nums,
+                                             FLAGS_webrtc_device_id));
   for (const auto& num : *instance_nums) {
     bool use_allocd;
     if (instance_index >= use_allocd_vec.size()) {
@@ -973,13 +1022,45 @@ Result<CuttlefishConfig> InitializeCuttlefishConfiguration(
     CF_EXPECT(!FLAGS_smt || cpus_int % 2 == 0,
               "CPUs must be a multiple of 2 in SMT mode");
 
+    bool console;
+    if (instance_index >= console_vec.size()) {
+      console = CF_EXPECT(ParseBool(console_vec[0],
+                                    "console"));
+    } else {
+      console = CF_EXPECT(ParseBool(
+          console_vec[instance_index], "console"));
+    }
     // new instance specific flags (moved from common flags)
     CF_EXPECT(instance_index < kernel_configs.size(),
               "instance_index " << instance_index << " out of boundary "
                                 << kernel_configs.size());
     instance.set_target_arch(kernel_configs[instance_index].target_arch);
-    instance.set_console(FLAGS_console);
-    instance.set_kgdb(FLAGS_console && FLAGS_kgdb);
+    instance.set_console(console);
+    instance.set_kgdb(console && FLAGS_kgdb);
+
+    bool enable_sandbox;
+    if (instance_index >= enable_sandbox_vec.size()) {
+      enable_sandbox = CF_EXPECT(ParseBool(enable_sandbox_vec[0],
+                                    "enable_sandbox"));
+    } else {
+      enable_sandbox = CF_EXPECT(ParseBool(
+          enable_sandbox_vec[instance_index], "enable_sandbox"));
+    }
+    // 1. Keep original code order SetCommandLineOptionWithMode("enable_sandbox")
+    // then set_enable_sandbox later.
+    // 2. SetCommandLineOptionWithMode condition: if gpu_mode or console,
+    // then SetCommandLineOptionWithMode false as original code did,
+    // otherwise keep default enable_sandbox value.
+    // 3. Sepolicy rules need to be updated to support gpu mode. Temporarily disable
+    // auto-enabling sandbox when gpu is enabled (b/152323505).
+    default_enable_sandbox += comma_str;
+    if ((tmp_config_obj.gpu_mode() != kGpuModeGuestSwiftshader) || console) {
+      // original code, just moved to each instance setting block
+      default_enable_sandbox += "false";
+    } else {
+      default_enable_sandbox += BoolToString(enable_sandbox);
+    }
+    comma_str = ",";
 
     int blank_data_image_mb_int;
     if (instance_index < blank_data_image_mb_vec.size()) {
@@ -1313,17 +1394,10 @@ Result<CuttlefishConfig> InitializeCuttlefishConfiguration(
 
     instance.set_start_webrtc_signaling_server(false);
 
-    if (FLAGS_webrtc_device_id.empty()) {
-      // Use the instance's name as a default
-      instance.set_webrtc_device_id(const_instance.instance_name());
-    } else {
-      std::string device_id = FLAGS_webrtc_device_id;
-      size_t pos;
-      while ((pos = device_id.find("{num}")) != std::string::npos) {
-        device_id.replace(pos, strlen("{num}"), std::to_string(num));
-      }
-      instance.set_webrtc_device_id(device_id);
-    }
+    CF_EXPECT(Contains(num_to_webrtc_device_id_flag_map, num),
+              "Error in looking up num to webrtc_device_id_flag_map");
+    instance.set_webrtc_device_id(num_to_webrtc_device_id_flag_map[num]);
+
     if (!is_first_instance || !FLAGS_start_webrtc) {
       // Only the first instance starts the signaling server or proxy
       instance.set_start_webrtc_signaling_server(false);
@@ -1393,7 +1467,25 @@ Result<CuttlefishConfig> InitializeCuttlefishConfiguration(
   }
   tmp_config_obj.set_instance_names(names);
 
-  tmp_config_obj.set_enable_sandbox(FLAGS_enable_sandbox);
+  // Keep the original code here to set enable_sandbox commandline flag value
+  SetCommandLineOptionWithMode("enable_sandbox", default_enable_sandbox.c_str(),
+                               google::FlagSettingMode::SET_FLAGS_DEFAULT);
+  // After last SetCommandLineOptionWithMode, we could set these special flags
+  enable_sandbox_vec = android::base::Split(FLAGS_enable_sandbox, ",");
+  instance_index = 0;
+  for (const auto& num : *instance_nums) {
+    auto instance = tmp_config_obj.ForInstance(num);
+    bool enable_sandbox;
+    if (instance_index >= enable_sandbox_vec.size()) {
+      enable_sandbox = CF_EXPECT(ParseBool(enable_sandbox_vec[0],
+                                    "enable_sandbox"));
+    } else {
+      enable_sandbox = CF_EXPECT(ParseBool(
+          enable_sandbox_vec[instance_index], "enable_sandbox"));
+    }
+    instance.set_enable_sandbox(enable_sandbox);
+    instance_index++;
+  }
 
   tmp_config_obj.set_enable_audio(FLAGS_enable_audio);
 
@@ -1439,14 +1531,12 @@ void SetDefaultFlagsForCrosvm() {
       supported_archs.find(HostArch()) != supported_archs.end() &&
       EnsureDirectoryExists(kCrosvmVarEmptyDir).ok() &&
       IsDirectoryEmpty(kCrosvmVarEmptyDir) && !IsRunningInContainer();
-  SetCommandLineOptionWithMode("enable_sandbox",
-                               (default_enable_sandbox ? "true" : "false"),
-                               SET_FLAGS_DEFAULT);
 
   std::vector<std::string> system_image_dir =
       android::base::Split(FLAGS_system_image_dir, ",");
   std::string cur_system_image_dir = "";
   std::string default_bootloader = "";
+  std::string default_enable_sandbox_str = "";
   auto instance_nums =
       InstanceNumsCalculator().FromGlobalGflags().Calculate();
   for (int instance_index = 0; instance_index < instance_nums->size(); instance_index++) {
@@ -1458,11 +1548,16 @@ void SetDefaultFlagsForCrosvm() {
     cur_system_image_dir += "/bootloader";
     if (instance_index > 0) {
       default_bootloader += ",";
+      default_enable_sandbox_str += ",";
     }
     default_bootloader += cur_system_image_dir;
+    default_enable_sandbox_str += BoolToString(default_enable_sandbox);
   }
   SetCommandLineOptionWithMode("bootloader", default_bootloader.c_str(),
                                SET_FLAGS_DEFAULT);
+  // This is the 1st place to set "enable_sandbox" flag value
+  SetCommandLineOptionWithMode("enable_sandbox",
+                               default_enable_sandbox_str.c_str(), SET_FLAGS_DEFAULT);
 }
 
 void SetDefaultFlagsForGem5() {
