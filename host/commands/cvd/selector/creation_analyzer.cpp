@@ -167,13 +167,24 @@ CreationAnalyzer::AnalyzeInstanceIdsWithLock() {
   return instance_file_locks;
 }
 
+static bool IsCvdStart(const std::vector<std::string>& args) {
+  if (args.empty()) {
+    return false;
+  }
+  if (args[0] == "start") {
+    return true;
+  }
+  return (args.size() > 1 && args[1] == "start");
+}
+
 Result<GroupCreationInfo> CreationAnalyzer::Analyze() {
-  // TODO(kwstephenkim): check if the command is "start"
+  CF_EXPECT(IsCvdStart(cmd_args_),
+            "CreationAnalyzer::Analyze() is for cvd start only.");
   auto instance_info = CF_EXPECT(AnalyzeInstanceIdsWithLock());
   group_name_ = AnalyzeGroupName(instance_info);
   home_ = CF_EXPECT(AnalyzeHome());
-  // TODO(kwstephenkim): implement host_artifacts_path_
-  host_artifacts_path_ = "";
+  CF_EXPECT(envs_.find(kAndroidHostOut) != envs_.end());
+  host_artifacts_path_ = envs_.at(kAndroidHostOut);
 
   GroupCreationInfo report = {.home = home_,
                               .host_artifacts_path = host_artifacts_path_,
@@ -185,14 +196,51 @@ Result<GroupCreationInfo> CreationAnalyzer::Analyze() {
 }
 
 std::string CreationAnalyzer::AnalyzeGroupName(
-    const std::vector<PerInstanceInfo>&) const {
-  // TODO(kwstephenkim): implement AnalyzeGroupName()
-  return "";
+    const std::vector<PerInstanceInfo>& per_instance_infos) const {
+  if (selector_options_parser_.GroupName()) {
+    return selector_options_parser_.GroupName().value();
+  }
+  // auto-generate group name
+  std::vector<unsigned> ids;
+  for (const auto& per_instance_info : per_instance_infos) {
+    ids.emplace_back(per_instance_info.instance_id_);
+  }
+  std::string base_name = GenDefaultGroupName();
+  /*
+   * TODO(kwstephenkim): Determine the default group based on InstanceDatabase
+   *
+   * The default instance group is the group that is created when there is no
+   * active instance group for the user. The implementation is deferred for now
+   * until InstanceDatabase related code is added to this implementation.
+   */
+  if (Contains(ids, 1)) {
+    // if default group, we simply return base_name, which is "cvd"
+    return base_name;
+  }
+  /* We cannot return simply "cvd" as we do not want duplication in the group
+   * name across the instance groups owned by the user. Note that the set of ids
+   * are expected to be unique to the user, so we use the ids. If ever the end
+   * user happened to have already used the generated name, we did our best, and
+   * cvd start will fail with a proper error message.
+   */
+  return base_name + "_" + android::base::Join(ids, "_");
 }
 
 Result<std::string> CreationAnalyzer::AnalyzeHome() const {
-  // TODO(kwstephenkim): implement AnalyzeHome()
-  return "";
+  CF_EXPECT(credential_ != std::nullopt,
+            "Credential is necessary for cvd start.");
+  auto system_wide_home =
+      CF_EXPECT(SystemWideUserHome(credential_.value().uid));
+  if (envs_.find("HOME") != envs_.end() &&
+      envs_.at("HOME") != system_wide_home) {
+    // explicitly overridden by the user
+    return envs_.at("HOME");
+  }
+  CF_EXPECT(!group_name_.empty(),
+            "To auto-generate HOME, the group name is a must.");
+  std::string auto_generated_home{kParentOfDefaultHomeDirectories};
+  auto_generated_home.append("/" + group_name_);
+  return auto_generated_home;
 }
 
 }  // namespace selector
