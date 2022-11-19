@@ -221,16 +221,15 @@ static const std::set<VersionedAidlPackage> kKnownMissingAidl = {
     // TODO(b/250036572): Implement for the interface.
     {"android.hardware.graphics.composer3.", 2},
 
+    // The interface is in development (b/251850069)
+    {"android.hardware.media.c2.", 1},
+
     // These types are only used in TV.
     {"android.hardware.tv.tuner.", 2},
     {"android.hardware.tv.input.", 1},
 
     // No implementation of IRadioIms yet TODO(b/250912118)
     {"android.hardware.radio.ims.media.", 1},
-
-    // TODO(b/259311835): Revert; temporary to handle merge conflicts from AOSP
-    // -> Internal
-    {"android.hardware.graphics.allocator.", 2},
 };
 
 static const std::set<VersionedAidlPackage> kComingSoonAidl = {
