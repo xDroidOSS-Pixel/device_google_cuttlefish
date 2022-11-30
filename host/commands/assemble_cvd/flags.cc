@@ -119,13 +119,10 @@ DEFINE_vec(gpu_capture_binary, CF_DEFAULTS_GPU_CAPTURE_BINARY,
 DEFINE_vec(enable_gpu_udmabuf, cuttlefish::BoolToString(CF_DEFAULTS_ENABLE_GPU_UDMABUF),
             "Use the udmabuf driver for zero-copy virtio-gpu");
 
-DEFINE_vec(enable_gpu_angle, cuttlefish::BoolToString(CF_DEFAULTS_ENABLE_GPU_ANGLE),
-            "Use ANGLE to provide GLES implementation (always true for"
-            " guest_swiftshader");
-DEFINE_bool(deprecated_boot_completed, CF_DEFAULTS_DEPRECATED_BOOT_COMPLETED,
-            "Log boot completed message to"
-            " host kernel. This is only used during transition of our clients."
-            " Will be deprecated soon.");
+DEFINE_vec(enable_gpu_angle,
+           cuttlefish::BoolToString(CF_DEFAULTS_ENABLE_GPU_ANGLE),
+           "Use ANGLE to provide GLES implementation (always true for"
+           " guest_swiftshader");
 
 DEFINE_vec(use_allocd, CF_DEFAULTS_USE_ALLOCD?"true":"false",
             "Acquire static resources from the resource allocator daemon.");
@@ -140,8 +137,6 @@ DEFINE_vec(
     "to the device console and typing in \"boot\".");
 DEFINE_bool(enable_host_bluetooth, CF_DEFAULTS_ENABLE_HOST_BLUETOOTH,
             "Enable the root-canal which is Bluetooth emulator in the host.");
-DEFINE_bool(rootcanal_attach_mode, CF_DEFAULTS_ROOTCANAL_ATTACH_MODE,
-            "[DEPRECATED] Ignored, use rootcanal_instance_num instead");
 DEFINE_int32(
     rootcanal_instance_num, CF_DEFAULTS_ENABLE_ROOTCANAL_INSTANCE_NUM,
     "If it is greater than 0, use an existing rootcanal instance which is "
@@ -278,8 +273,8 @@ DEFINE_string(gem5_debug_flags, CF_DEFAULTS_GEM5_DEBUG_FLAGS,
 DEFINE_vec(restart_subprocesses,
               cuttlefish::BoolToString(CF_DEFAULTS_RESTART_SUBPROCESSES),
               "Restart any crashed host process");
-DEFINE_bool(enable_vehicle_hal_grpc_server,
-            CF_DEFAULTS_ENABLE_VEHICLE_HAL_GRPC_SERVER,
+DEFINE_vec(enable_vehicle_hal_grpc_server,
+            cuttlefish::BoolToString(CF_DEFAULTS_ENABLE_VEHICLE_HAL_GRPC_SERVER),
             "Enables the vehicle HAL "
             "emulation gRPC server on the host");
 DEFINE_vec(bootloader, CF_DEFAULTS_BOOTLOADER, "Bootloader binary path");
@@ -304,7 +299,7 @@ DEFINE_bool(kgdb, CF_DEFAULTS_KGDB,
             "with kgdb/kdb. The kernel must have been built with "
             "kgdb support, and serial console must be enabled.");
 
-DEFINE_bool(start_gnss_proxy, CF_DEFAULTS_START_GNSS_PROXY,
+DEFINE_vec(start_gnss_proxy, cuttlefish::BoolToString(CF_DEFAULTS_START_GNSS_PROXY),
             "Whether to start the gnss proxy.");
 
 DEFINE_vec(gnss_file_path, CF_DEFAULTS_GNSS_FILE_PATH,
@@ -388,7 +383,7 @@ DEFINE_vec(use_sdcard, CF_DEFAULTS_USE_SDCARD?"true":"false",
 DEFINE_bool(protected_vm, CF_DEFAULTS_PROTECTED_VM,
             "Boot in Protected VM mode");
 
-DEFINE_bool(enable_audio, CF_DEFAULTS_ENABLE_AUDIO,
+DEFINE_vec(enable_audio, cuttlefish::BoolToString(CF_DEFAULTS_ENABLE_AUDIO),
             "Whether to play or capture audio");
 
 DEFINE_vec(camera_server_port, std::to_string(CF_DEFAULTS_CAMERA_SERVER_PORT),
@@ -752,8 +747,6 @@ Result<CuttlefishConfig> InitializeCuttlefishConfiguration(
 
   tmp_config_obj.set_host_tools_version(HostToolsCrc());
 
-  tmp_config_obj.set_deprecated_boot_completed(FLAGS_deprecated_boot_completed);
-
   tmp_config_obj.set_qemu_binary_dir(FLAGS_qemu_binary_dir);
   tmp_config_obj.set_crosvm_binary(FLAGS_crosvm_binary);
   tmp_config_obj.set_gem5_debug_flags(FLAGS_gem5_debug_flags);
@@ -779,11 +772,6 @@ Result<CuttlefishConfig> InitializeCuttlefishConfiguration(
 
   tmp_config_obj.set_webrtc_enable_adb_websocket(
           FLAGS_webrtc_enable_adb_websocket);
-
-  tmp_config_obj.set_enable_gnss_grpc_proxy(FLAGS_start_gnss_proxy);
-
-  tmp_config_obj.set_enable_vehicle_hal_grpc_server(
-      FLAGS_enable_vehicle_hal_grpc_server);
 
   tmp_config_obj.set_enable_metrics(FLAGS_report_anonymous_usage_stats);
 
@@ -899,6 +887,12 @@ Result<CuttlefishConfig> InitializeCuttlefishConfiguration(
       FLAGS_modem_simulator_sim_type, instances_size, "modem_simulator_sim_type"));
   std::vector<bool> console_vec = CF_EXPECT(GetFlagBoolValueForInstances(
       FLAGS_console, instances_size, "console"));
+  std::vector<bool> enable_audio_vec = CF_EXPECT(GetFlagBoolValueForInstances(
+      FLAGS_enable_audio, instances_size, "enable_audio"));
+  std::vector<bool> enable_vehicle_hal_grpc_server_vec = CF_EXPECT(GetFlagBoolValueForInstances(
+      FLAGS_enable_vehicle_hal_grpc_server, instances_size, "enable_vehicle_hal_grpc_server"));
+  std::vector<bool> start_gnss_proxy_vec = CF_EXPECT(GetFlagBoolValueForInstances(
+      FLAGS_start_gnss_proxy, instances_size, "start_gnss_proxy"));
 
   // At this time, FLAGS_enable_sandbox comes from SetDefaultFlagsForCrosvm
   std::vector<bool> enable_sandbox_vec = CF_EXPECT(GetFlagBoolValueForInstances(
@@ -964,6 +958,11 @@ Result<CuttlefishConfig> InitializeCuttlefishConfiguration(
     auto const_instance =
         const_cast<const CuttlefishConfig&>(tmp_config_obj).ForInstance(num);
     instance.set_use_allocd(use_allocd_vec[instance_index]);
+    instance.set_enable_audio(enable_audio_vec[instance_index]);
+    instance.set_enable_vehicle_hal_grpc_server(
+      enable_vehicle_hal_grpc_server_vec[instance_index]);
+    instance.set_enable_gnss_grpc_proxy(start_gnss_proxy_vec[instance_index]);
+
     if (use_random_serial_vec[instance_index]) {
       instance.set_serial_number(
           RandomSerialNumber("CFCVD" + std::to_string(num)));
@@ -1317,8 +1316,6 @@ Result<CuttlefishConfig> InitializeCuttlefishConfiguration(
     instance.set_enable_sandbox(enable_sandbox_vec[instance_index]);
     instance_index++;
   }
-
-  tmp_config_obj.set_enable_audio(FLAGS_enable_audio);
 
   DiskImageFlagsVectorization(tmp_config_obj, fetcher_config);
 
