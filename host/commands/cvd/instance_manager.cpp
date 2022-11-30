@@ -57,9 +57,8 @@ selector::InstanceDatabase& InstanceManager::GetInstanceDB(const uid_t uid) {
 
 Result<InstanceManager::GroupCreationInfo> InstanceManager::Analyze(
     const std::string& sub_cmd, const CreationAnalyzerParam& param,
-    const std::optional<ucred>& credential) {
-  CF_EXPECT(credential != std::nullopt);
-  const uid_t uid = credential->uid;
+    const ucred& credential) {
+  const uid_t uid = credential.uid;
   auto& instance_db = GetInstanceDB(uid);
 
   auto group_creation_info = CF_EXPECT(CreationAnalyzer::Analyze(
@@ -79,7 +78,7 @@ Result<void> InstanceManager::SetInstanceGroup(
   std::lock_guard assemblies_lock(instance_db_mutex_);
   auto& instance_db = GetInstanceDB(uid);
   // for now, the group name is determined automatically by the instance_db_
-  CF_EXPECT(instance_db.AddInstanceGroup(dir, info.host_binaries_dir));
+  CF_EXPECT(instance_db.AddInstanceGroup(dir, info.host_artifacts_path));
   auto searched_group =
       CF_EXPECT(instance_db.FindGroup({selector::kHomeField, dir}));
   for (auto i : info.instances) {
@@ -106,7 +105,7 @@ InstanceManager::GetInstanceGroupInfo(
   auto& instance_db = GetInstanceDB(uid);
   auto group = CF_EXPECT(instance_db.FindGroup({selector::kHomeField, dir}));
   InstanceGroupInfo info;
-  info.host_binaries_dir = group.Get().HostBinariesDir();
+  info.host_artifacts_path = group.Get().HostArtifactsPath();
   const auto& instances = group.Get().Instances();
   for (const auto& instance : instances) {
     CF_EXPECT(instance != nullptr);
@@ -126,7 +125,7 @@ void InstanceManager::IssueStatusCommand(
   if (!config) {
     return;
   }
-  Command command(group.HostBinariesDir() + kStatusBin);
+  Command command(group.HostArtifactsPath() + "/bin/" + kStatusBin);
   command.AddParameter("--print");
   command.AddParameter("--all_instances");
   command.RedirectStdIO(Subprocess::StdIOChannel::kStdOut, out);
@@ -202,7 +201,7 @@ void InstanceManager::IssueStopCommand(
     const SharedFD& out, const SharedFD& err,
     const std::string& config_file_path,
     const selector::LocalInstanceGroup& group) {
-  Command command(group.HostBinariesDir() + kStopBin);
+  Command command(group.HostArtifactsPath() + "/bin/" + kStopBin);
   command.AddParameter("--clear_instance_dirs");
   command.RedirectStdIO(Subprocess::StdIOChannel::kStdOut, out);
   command.RedirectStdIO(Subprocess::StdIOChannel::kStdErr, err);
