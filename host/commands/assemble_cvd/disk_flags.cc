@@ -113,6 +113,7 @@ DECLARE_string(bootloader);
 DECLARE_string(initramfs_path);
 DECLARE_string(kernel_path);
 DECLARE_bool(resume);
+DECLARE_bool(protected_vm);
 DECLARE_bool(use_overlay);
 
 namespace cuttlefish {
@@ -397,7 +398,7 @@ std::vector<ImagePartition> persistent_composite_disk_config(
       .label = "vbmeta",
       .image_file_path = AbsolutePath(instance.vbmeta_path()),
   });
-  if (!instance.protected_vm()) {
+  if (!FLAGS_protected_vm) {
     partitions.push_back(ImagePartition{
         .label = "frp",
         .image_file_path =
@@ -457,7 +458,7 @@ class BootImageRepacker : public SetupFeature {
     // If we are booting a protected VM, for now, assume that image repacking
     // isn't trusted. Repacking requires resigning the image and keys from an
     // android host aren't trusted.
-    return !instance_.protected_vm();
+    return !config_.protected_vm();
   }
 
  protected:
@@ -629,7 +630,7 @@ class GeneratePersistentBootconfig : public SetupFeature {
     return "GeneratePersistentBootconfig";
   }
   bool Enabled() const override {
-    return (!instance_.protected_vm());
+    return (!config_.protected_vm());
   }
 
  private:
@@ -734,7 +735,7 @@ class GeneratePersistentVbmeta : public SetupFeature {
   }
 
   bool Setup() override {
-    if (!instance_.protected_vm()) {
+    if (!config_.protected_vm()) {
       if (!PrepareVBMetaImage(instance_.vbmeta_path(), config_.bootconfig_supported())) {
         return false;
       }
@@ -833,12 +834,13 @@ class InitializeMetadataImage : public SetupFeature {
 class InitializeAccessKregistryImage : public SetupFeature {
  public:
   INJECT(InitializeAccessKregistryImage(
+      const CuttlefishConfig& config,
       const CuttlefishConfig::InstanceSpecific& instance))
-      : instance_(instance) {}
+      : config_(config), instance_(instance) {}
 
   // SetupFeature
   std::string Name() const override { return "InitializeAccessKregistryImage"; }
-  bool Enabled() const override { return !instance_.protected_vm(); }
+  bool Enabled() const override { return !config_.protected_vm(); }
 
  private:
   std::unordered_set<SetupFeature*> Dependencies() const override { return {}; }
@@ -852,18 +854,20 @@ class InitializeAccessKregistryImage : public SetupFeature {
     return {};
   }
 
+  const CuttlefishConfig& config_;
   const CuttlefishConfig::InstanceSpecific& instance_;
 };
 
 class InitializeHwcomposerPmemImage : public SetupFeature {
  public:
   INJECT(InitializeHwcomposerPmemImage(
+      const CuttlefishConfig& config,
       const CuttlefishConfig::InstanceSpecific& instance))
-      : instance_(instance) {}
+      : config_(config), instance_(instance) {}
 
   // SetupFeature
   std::string Name() const override { return "InitializeHwcomposerPmemImage"; }
-  bool Enabled() const override { return !instance_.protected_vm(); }
+  bool Enabled() const override { return !config_.protected_vm(); }
 
  private:
   std::unordered_set<SetupFeature*> Dependencies() const override { return {}; }
@@ -877,17 +881,19 @@ class InitializeHwcomposerPmemImage : public SetupFeature {
     return {};
   }
 
+  const CuttlefishConfig& config_;
   const CuttlefishConfig::InstanceSpecific& instance_;
 };
 
 class InitializePstore : public SetupFeature {
  public:
-  INJECT(InitializePstore(const CuttlefishConfig::InstanceSpecific& instance))
-      : instance_(instance) {}
+  INJECT(InitializePstore(const CuttlefishConfig& config,
+                          const CuttlefishConfig::InstanceSpecific& instance))
+      : config_(config), instance_(instance) {}
 
   // SetupFeature
   std::string Name() const override { return "InitializePstore"; }
-  bool Enabled() const override { return !instance_.protected_vm(); }
+  bool Enabled() const override { return !config_.protected_vm(); }
 
  private:
   std::unordered_set<SetupFeature*> Dependencies() const override { return {}; }
@@ -901,18 +907,20 @@ class InitializePstore : public SetupFeature {
     return {};
   }
 
+  const CuttlefishConfig& config_;
   const CuttlefishConfig::InstanceSpecific& instance_;
 };
 
 class InitializeSdCard : public SetupFeature {
  public:
-  INJECT(InitializeSdCard(const CuttlefishConfig::InstanceSpecific& instance))
-      : instance_(instance) {}
+  INJECT(InitializeSdCard(const CuttlefishConfig& config,
+                          const CuttlefishConfig::InstanceSpecific& instance))
+      : config_(config), instance_(instance) {}
 
   // SetupFeature
   std::string Name() const override { return "InitializeSdCard"; }
   bool Enabled() const override {
-    return instance_.use_sdcard() && !instance_.protected_vm();
+    return instance_.use_sdcard() && !config_.protected_vm();
   }
 
  private:
@@ -927,18 +935,20 @@ class InitializeSdCard : public SetupFeature {
     return {};
   }
 
+  const CuttlefishConfig& config_;
   const CuttlefishConfig::InstanceSpecific& instance_;
 };
 
 class InitializeFactoryResetProtected : public SetupFeature {
  public:
   INJECT(InitializeFactoryResetProtected(
+      const CuttlefishConfig& config,
       const CuttlefishConfig::InstanceSpecific& instance))
-      : instance_(instance) {}
+      : config_(config), instance_(instance) {}
 
   // SetupFeature
   std::string Name() const override { return "InitializeSdCard"; }
-  bool Enabled() const override { return !instance_.protected_vm(); }
+  bool Enabled() const override { return !config_.protected_vm(); }
 
  private:
   std::unordered_set<SetupFeature*> Dependencies() const override { return {}; }
@@ -952,6 +962,7 @@ class InitializeFactoryResetProtected : public SetupFeature {
     return {};
   }
 
+  const CuttlefishConfig& config_;
   const CuttlefishConfig::InstanceSpecific& instance_;
 };
 
@@ -1429,7 +1440,7 @@ Result<void> CreateDynamicDiskFiles(const FetcherConfig& fetcher_config,
       }
     }
 
-    if (!instance.protected_vm()) {
+    if (!FLAGS_protected_vm) {
       os_disk_builder.OverlayPath(instance.PerInstancePath("overlay.img"));
       CF_EXPECT(os_disk_builder.BuildOverlayIfNecessary());
       if (instance.ap_boot_flow() != APBootFlow::None) {

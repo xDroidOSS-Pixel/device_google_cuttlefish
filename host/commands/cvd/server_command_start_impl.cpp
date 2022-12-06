@@ -27,6 +27,7 @@
 #include "common/libs/fs/shared_buf.h"
 #include "common/libs/fs/shared_fd.h"
 #include "common/libs/utils/contains.h"
+#include "common/libs/utils/flag_parser.h"
 #include "common/libs/utils/subprocess.h"
 #include "host/libs/config/cuttlefish_config.h"
 
@@ -182,7 +183,19 @@ Result<void> CvdStartCommandHandler::FireCommand(Command&& command,
 
 bool CvdStartCommandHandler::HasHelpOpts(
     const std::vector<std::string>& args) const {
-  return IsHelpSubcmd(args);
+  std::vector<std::string> copied_args(args);
+  std::vector<Flag> flags;
+  bool bool_value_placeholder = false;
+  std::string str_value_placeholder;
+  for (const auto bool_opt : help_bool_opts_) {
+    flags.emplace_back(GflagsCompatFlag(bool_opt, bool_value_placeholder));
+  }
+  for (const auto str_opt : help_str_opts_) {
+    flags.emplace_back(GflagsCompatFlag(str_opt, str_value_placeholder));
+  }
+  ParseFlags(flags, copied_args);
+  // if there was any match, some in copied_args were consumed.
+  return (args.size() != copied_args.size());
 }
 
 const std::map<std::string, std::string>

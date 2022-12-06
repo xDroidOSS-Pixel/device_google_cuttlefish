@@ -13,4 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# This file is deprecated.
+TARGET_KERNEL_USE ?= mainline
+TARGET_KERNEL_PATH ?= device/google/cuttlefish_prebuilts/kernel/$(TARGET_KERNEL_USE)-arm/kernel-$(TARGET_KERNEL_USE)
+
+PRODUCT_COPY_FILES += $(TARGET_KERNEL_PATH):kernel

@@ -19,7 +19,6 @@
 #include <unistd.h>
 
 #include <algorithm>
-#include <memory>
 #include <string>
 
 #include <fruit/fruit.h>
@@ -288,7 +287,7 @@ class ServerLoopImpl : public ServerLoop,
     followup_stdin->UNMANAGED_Dup2(0);
 
     auto argv_vec = gflags::GetArgvs();
-    std::unique_ptr<char*[]> argv(new char*[argv_vec.size() + 2]);
+    char** argv = new char*[argv_vec.size() + 2];
     for (size_t i = 0; i < argv_vec.size(); i++) {
       argv[i] = argv_vec[i].data();
     }
@@ -298,7 +297,7 @@ class ServerLoopImpl : public ServerLoop,
     argv[argv_vec.size()] = reboot_notification.data();
     argv[argv_vec.size() + 1] = nullptr;
 
-    execv("/proc/self/exe", argv.get());
+    execv("/proc/self/exe", argv);
     // execve should not return, so something went wrong.
     PLOG(ERROR) << "execv returned: ";
   }

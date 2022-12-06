@@ -69,12 +69,17 @@ class InstanceManager {
                        const SharedFD& err);
   Result<cvd::Status> CvdFleet(const uid_t uid, const SharedFD& out,
                                const SharedFD& err,
-                               const std::vector<std::string>& fleet_cmd_args);
+                               const std::optional<std::string>& env_config,
+                               const std::string& host_tool_dir,
+                               const std::vector<std::string>& args);
   static Result<std::string> GetCuttlefishConfigPath(const std::string& home);
 
  private:
-  Result<cvd::Status> CvdFleetImpl(const uid_t uid, const SharedFD& out,
-                                   const SharedFD& err);
+  Result<cvd::Status> CvdFleetImpl(
+      const uid_t uid, const SharedFD& out, const SharedFD& err,
+      const std::optional<std::string>& env_config);
+  Result<cvd::Status> CvdFleetHelp(const SharedFD& out, const SharedFD& err,
+                                   const std::string& host_tool_dir);
 
   static void IssueStatusCommand(const SharedFD& out, const SharedFD& err,
                                  const std::string& config_file_path,

@@ -157,7 +157,7 @@ PRODUCT_PACKAGES += \
     vsoc_input_service \
     metrics_helper \
 
-$(call soong_config_append,cvd,launch_configs,cvd_config_auto.json cvd_config_auto_md.json cvd_config_foldable.json cvd_config_go.json cvd_config_phone.json cvd_config_slim.json cvd_config_tablet.json cvd_config_tv.json cvd_config_wear.json)
+$(call soong_config_append,cvd,launch_configs,cvd_config_auto.json cvd_config_foldable.json cvd_config_go.json cvd_config_phone.json cvd_config_slim.json cvd_config_tablet.json cvd_config_tv.json cvd_config_wear.json)
 $(call soong_config_append,cvd,grub_config,grub.cfg)
 
 #
@@ -686,12 +686,6 @@ PRODUCT_PACKAGES += \
     wpa_supplicant
 PRODUCT_COPY_FILES += \
     device/google/cuttlefish/shared/config/wpa_supplicant.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/wpa_supplicant.rc
-
-# VirtWifi interface configuration
-ifeq ($(DEVICE_VIRTWIFI_PORT),)
-    DEVICE_VIRTWIFI_PORT := eth2
-endif
-PRODUCT_VENDOR_PROPERTIES += ro.vendor.virtwifi.port=${DEVICE_VIRTWIFI_PORT}
 
 # WLAN driver configuration files
 ifndef LOCAL_WPA_SUPPLICANT_OVERLAY
