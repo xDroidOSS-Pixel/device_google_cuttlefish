@@ -141,7 +141,8 @@ std::vector<std::string> Gem5Manager::ConfigureGraphics(
   };
 }
 
-std::string Gem5Manager::ConfigureBootDevices(int /*num_disks*/) {
+std::string Gem5Manager::ConfigureBootDevices(int /*num_disks*/,
+                                              bool /*have_gpu*/) {
   switch (arch_) {
     case Arch::Arm:
     case Arch::Arm64:
@@ -185,8 +186,8 @@ Result<std::vector<Command>> Gem5Manager::StartCommands(
   // We check the flags are not empty first since they are optional
   if(!config.gem5_debug_flags().empty()) {
     gem5_cmd.AddParameter("--debug-flags=", config.gem5_debug_flags());
-    if(!config.gem5_debug_file().empty()) {
-      gem5_cmd.AddParameter("--debug-file=", config.gem5_debug_file());
+    if(!instance.gem5_debug_file().empty()) {
+      gem5_cmd.AddParameter("--debug-file=", instance.gem5_debug_file());
     }
   }
 

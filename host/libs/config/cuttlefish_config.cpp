@@ -85,13 +85,15 @@ const char* kInstances = "instances";
 }  // namespace
 
 const char* const kGpuModeAuto = "auto";
-const char* const kGpuModeGuestSwiftshader = "guest_swiftshader";
 const char* const kGpuModeDrmVirgl = "drm_virgl";
 const char* const kGpuModeGfxStream = "gfxstream";
+const char* const kGpuModeGuestSwiftshader = "guest_swiftshader";
+const char* const kGpuModeNone = "none";
 
 const char* const kHwComposerAuto = "auto";
 const char* const kHwComposerDrm = "drm";
 const char* const kHwComposerRanchu = "ranchu";
+const char* const kHwComposerNone = "none";
 
 std::string DefaultEnvironmentPath(const char* environment_key,
                                    const char* default_value,
@@ -198,13 +200,6 @@ void CuttlefishConfig::set_crosvm_binary(const std::string& crosvm_binary) {
   (*dictionary_)[kCrosvmBinary] = crosvm_binary;
 }
 
-static constexpr char kGem5DebugFile[] = "gem5_debug_file";
-std::string CuttlefishConfig::gem5_debug_file() const {
-  return (*dictionary_)[kGem5DebugFile].asString();
-}
-void CuttlefishConfig::set_gem5_debug_file(const std::string& gem5_debug_file) {
-  (*dictionary_)[kGem5DebugFile] = gem5_debug_file;
-}
 static constexpr char kGem5DebugFlags[] = "gem5_debug_flags";
 std::string CuttlefishConfig::gem5_debug_flags() const {
   return (*dictionary_)[kGem5DebugFlags].asString();
@@ -239,14 +234,6 @@ void CuttlefishConfig::set_webrtc_assets_dir(const std::string& webrtc_assets_di
 }
 std::string CuttlefishConfig::webrtc_assets_dir() const {
   return (*dictionary_)[kWebRTCAssetsDir].asString();
-}
-
-static constexpr char kBootSlot[] = "boot_slot";
-void CuttlefishConfig::set_boot_slot(const std::string& boot_slot) {
-  (*dictionary_)[kBootSlot] = boot_slot;
-}
-std::string CuttlefishConfig::boot_slot() const {
-  return (*dictionary_)[kBootSlot].asString();
 }
 
 static constexpr char kWebRTCCertsDir[] = "webrtc_certs_dir";
@@ -459,14 +446,6 @@ std::string CuttlefishConfig::ril_dns() const {
   return (*dictionary_)[kRilDns].asString();
 }
 
-static constexpr char kEnableKernelLog[] = "enable_kernel_log";
-void CuttlefishConfig::set_enable_kernel_log(bool enable_kernel_log) {
-  (*dictionary_)[kEnableKernelLog] = enable_kernel_log;
-}
-bool CuttlefishConfig::enable_kernel_log() const {
-  return (*dictionary_)[kEnableKernelLog].asBool();
-}
-
 static constexpr char kVhostNet[] = "vhost_net";
 void CuttlefishConfig::set_vhost_net(bool vhost_net) {
   (*dictionary_)[kVhostNet] = vhost_net;
@@ -600,14 +579,6 @@ void CuttlefishConfig::set_smt(bool smt) {
 }
 bool CuttlefishConfig::smt() const {
   return (*dictionary_)[kSmt].asBool();
-}
-
-static constexpr char kProtectedVm[] = "protected_vm";
-void CuttlefishConfig::set_protected_vm(bool protected_vm) {
-  (*dictionary_)[kProtectedVm] = protected_vm;
-}
-bool CuttlefishConfig::protected_vm() const {
-  return (*dictionary_)[kProtectedVm].asBool();
 }
 
 static constexpr char kBootconfigSupported[] = "bootconfig_supported";
