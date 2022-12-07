@@ -55,6 +55,7 @@ constexpr char kScreenChangedMessage[] = "VIRTUAL_DEVICE_SCREEN_CHANGED";
 constexpr char kDisplayPowerModeChangedMessage[] =
     "VIRTUAL_DEVICE_DISPLAY_POWER_MODE_CHANGED";
 constexpr char kInternalDirName[] = "internal";
+constexpr char kGrpcSocketDirName[] = "grpc_socket";
 constexpr char kSharedDirName[] = "shared";
 constexpr char kLogDirName[] = "logs";
 constexpr char kCrosvmVarEmptyDir[] = "/var/empty";
@@ -124,12 +125,6 @@ class CuttlefishConfig {
   void set_seccomp_policy_dir(const std::string& seccomp_policy_dir);
   std::string seccomp_policy_dir() const;
 
-  void set_enable_webrtc(bool enable_webrtc);
-  bool enable_webrtc() const;
-
-  void set_webrtc_assets_dir(const std::string& webrtc_assets_dir);
-  std::string webrtc_assets_dir() const;
-
   void set_enable_host_bluetooth(bool enable_host_bluetooth);
   bool enable_host_bluetooth() const;
 
@@ -173,14 +168,6 @@ class CuttlefishConfig {
   // to bind to it and by the webrtc process to connect to and register itself
   void set_sig_server_port(int port);
   int sig_server_port() const;
-
-  // The range of UDP ports available for webrtc sessions.
-  void set_webrtc_udp_port_range(std::pair<uint16_t, uint16_t> range);
-  std::pair<uint16_t, uint16_t> webrtc_udp_port_range() const;
-
-  // The range of TCP ports available for webrtc sessions.
-  void set_webrtc_tcp_port_range(std::pair<uint16_t, uint16_t> range);
-  std::pair<uint16_t, uint16_t> webrtc_tcp_port_range() const;
 
   // The address of the signaling server
   void set_sig_server_address(const std::string& addr);
@@ -345,6 +332,7 @@ class CuttlefishConfig {
     std::string PerInstancePath(const char* file_name) const;
     std::string PerInstanceInternalPath(const char* file_name) const;
     std::string PerInstanceLogPath(const std::string& file_name) const;
+    std::string PerInstanceGrpcSocketPath(const std::string& socket_name) const;
 
     std::string instance_dir() const;
 
@@ -488,6 +476,7 @@ class CuttlefishConfig {
 
     std::vector<DisplayConfig> display_configs() const;
 
+    std::string grpc_socket_path() const;
     int memory_mb() const;
     int ddr_mem_mb() const;
     std::string setupwizard_mode() const;
@@ -507,6 +496,15 @@ class CuttlefishConfig {
 
     // Kernel and bootloader logging
     bool enable_kernel_log() const;
+
+    bool enable_webrtc() const;
+    std::string webrtc_assets_dir() const;
+
+    // The range of TCP ports available for webrtc sessions.
+    std::pair<uint16_t, uint16_t> webrtc_tcp_port_range() const;
+
+    // The range of UDP ports available for webrtc sessions.
+    std::pair<uint16_t, uint16_t> webrtc_udp_port_range() const;
 
     // Configuration flags for a minimal device
     bool enable_minimal_mode() const;
@@ -636,9 +634,19 @@ class CuttlefishConfig {
     void set_gem5_debug_file(const std::string& gem5_debug_file);
     void set_protected_vm(bool protected_vm);
     void set_boot_slot(const std::string& boot_slot);
+    void set_grpc_socket_path(const std::string& sockets);
 
     // Kernel and bootloader logging
     void set_enable_kernel_log(bool enable_kernel_log);
+
+    void set_enable_webrtc(bool enable_webrtc);
+    void set_webrtc_assets_dir(const std::string& webrtc_assets_dir);
+
+    // The range of TCP ports available for webrtc sessions.
+    void set_webrtc_tcp_port_range(std::pair<uint16_t, uint16_t> range);
+
+    // The range of UDP ports available for webrtc sessions.
+    void set_webrtc_udp_port_range(std::pair<uint16_t, uint16_t> range);
 
     // Configuration flags for a minimal device
     void set_enable_minimal_mode(bool enable_minimal_mode);
