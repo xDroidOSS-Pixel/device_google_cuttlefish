@@ -229,11 +229,6 @@ DEFINE_bool(verify_sig_server_certificate,
             "trusted signing authority (Disallow self signed certificates). "
             "This is ignored if an insecure server is configured.");
 
-DEFINE_string(sig_server_headers_file, CF_DEFAULTS_SIG_SERVER_HEADERS_FILE,
-              "Path to a file containing HTTP headers to be included in the "
-              "connection to the signaling server. Each header should be on a "
-              "line by itself in the form <name>: <value>");
-
 DEFINE_vec(
     webrtc_device_id, CF_DEFAULTS_WEBRTC_DEVICE_ID,
     "The for the device to register with the signaling server. Every "
@@ -556,6 +551,8 @@ Result<std::vector<KernelConfig>> ReadKernelConfig() {
       kernel_config.target_arch = Arch::Arm;
     } else if (config.find("\nCONFIG_ARM64=y") != std::string::npos) {
       kernel_config.target_arch = Arch::Arm64;
+    } else if (config.find("\nCONFIG_ARCH_RV64I=y") != std::string::npos) {
+      kernel_config.target_arch = Arch::RiscV64;
     } else if (config.find("\nCONFIG_X86_64=y") != std::string::npos) {
       kernel_config.target_arch = Arch::X86_64;
     } else if (config.find("\nCONFIG_X86=y") != std::string::npos) {
@@ -753,7 +750,6 @@ Result<CuttlefishConfig> InitializeCuttlefishConfiguration(
   tmp_config_obj.set_sig_server_address(FLAGS_webrtc_sig_server_addr);
   tmp_config_obj.set_sig_server_path(FLAGS_webrtc_sig_server_path);
   tmp_config_obj.set_sig_server_strict(FLAGS_verify_sig_server_certificate);
-  tmp_config_obj.set_sig_server_headers_path(FLAGS_sig_server_headers_file);
 
   tmp_config_obj.set_enable_metrics(FLAGS_report_anonymous_usage_stats);
 
@@ -1284,6 +1280,9 @@ Result<CuttlefishConfig> InitializeCuttlefishConfiguration(
           // TODO(b/260960328) : Migrate openwrt image for arm64 into
           // APBootFlow::Grub.
           break;
+        case Arch::RiscV64:
+          // TODO: RISCV port doesn't have grub-efi-bin yet
+          break;
         case Arch::X86:
         case Arch::X86_64:
           required_grub_image_path = kBootSrcPathIA32;
@@ -1381,6 +1380,8 @@ Result<void> SetDefaultFlagsForQemu(Arch target_arch) {
       default_bootloader += "arm";
   } else if (target_arch == Arch::Arm64) {
       default_bootloader += "aarch64";
+  } else if (target_arch == Arch::RiscV64) {
+      default_bootloader += "riscv64";
   } else {
       default_bootloader += "x86_64";
   }
