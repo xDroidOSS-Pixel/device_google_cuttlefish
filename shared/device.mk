@@ -362,12 +362,15 @@ PRODUCT_PACKAGES += \
 
 #
 # Audio HAL
+# Note: aidl services are loaded, however they are not fully functional yet,
+#       and are not used by the framework, only by VTS tests.
 #
 ifndef LOCAL_AUDIO_PRODUCT_PACKAGE
 LOCAL_AUDIO_PRODUCT_PACKAGE := \
     android.hardware.audio.service \
     android.hardware.audio@7.1-impl.ranchu \
     android.hardware.audio.effect@7.0-impl \
+    android.hardware.audio.service-aidl.example \
     android.hardware.audio.effect.service-aidl.example
 DEVICE_MANIFEST_FILE += \
     device/google/cuttlefish/guest/hals/audio/effects/manifest.xml
@@ -493,20 +496,30 @@ PRODUCT_PACKAGES += \
 # KeyMint HAL
 #
 ifeq ($(LOCAL_KEYMINT_PRODUCT_PACKAGE),)
-       LOCAL_KEYMINT_PRODUCT_PACKAGE := android.hardware.security.keymint-service.remote \
-                                        RemoteProvisioner
-# Indicate that this KeyMint includes support for the ATTEST_KEY key purpose.
+    LOCAL_KEYMINT_PRODUCT_PACKAGE := android.hardware.security.keymint-service.remote
+endif
+
+ifeq ($(LOCAL_KEYMINT_PRODUCT_PACKAGE),android.hardware.security.keymint-service.rust)
+    # KeyMint HAL has been overridden to force use of the Rust reference implementation.
+    # Set the build config for secure_env to match.
+    $(call soong_config_set,secure_env,keymint_impl,rust)
+endif
+
+PRODUCT_PACKAGES += \
+    $(LOCAL_KEYMINT_PRODUCT_PACKAGE) \
+    RemoteProvisioner
+
+# Indicate that KeyMint includes support for the ATTEST_KEY key purpose.
 PRODUCT_COPY_FILES += \
     frameworks/native/data/etc/android.hardware.keystore.app_attest_key.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.keystore.app_attest_key.xml
-endif
- PRODUCT_PACKAGES += \
-    $(LOCAL_KEYMINT_PRODUCT_PACKAGE)
 
 #
 # Dice HAL
 #
+ifneq ($(filter-out %_riscv64,$(TARGET_PRODUCT)),)
 PRODUCT_PACKAGES += \
     android.hardware.security.dice-service.non-secure-software
+endif
 
 #
 # Power and PowerStats HALs
@@ -692,6 +705,9 @@ PRODUCT_VENDOR_PROPERTIES += \
 # Disable GPU-intensive background blur for widget picker
 PRODUCT_SYSTEM_PROPERTIES += \
     ro.launcher.depth.widget=0
+
+# Start fingerprint virtual HAL process
+PRODUCT_VENDOR_PROPERTIES += ro.vendor.fingerprint_virtual_hal_start=true
 
 # Vendor Dlkm Locader
 PRODUCT_PACKAGES += \
