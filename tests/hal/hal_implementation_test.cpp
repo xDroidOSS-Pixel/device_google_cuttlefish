@@ -42,7 +42,7 @@ static const std::set<std::string> kKnownMissingHidl = {
     "android.hardware.audio.effect@6.0",
     "android.hardware.automotive.audiocontrol@1.0",
     "android.hardware.automotive.audiocontrol@2.0",
-    "android.hardware.automotive.can@1.0",
+    "android.hardware.automotive.can@1.0",  // converted to AIDL, see b/170405615
     "android.hardware.automotive.evs@1.1",
     "android.hardware.automotive.sv@1.0",
     "android.hardware.automotive.vehicle@2.0",
@@ -169,6 +169,7 @@ static const std::set<VersionedAidlPackage> kKnownMissingAidl = {
     // stuck at version 3 while RKP support is being added. Will be
     // updated soon.
     {"android.hardware.identity.", 4},
+    {"android.hardware.identity.", 5},
 
     // Cuttlefish will use the default implementation (b/205758693)
     {"android.hardware.bluetooth.", 1},
@@ -210,6 +211,7 @@ static const std::set<VersionedAidlPackage> kKnownMissingAidl = {
     {"android.frameworks.automotive.telemetry.", 2},
     {"android.hardware.automotive.audiocontrol.", 1},
     {"android.hardware.automotive.audiocontrol.", 2},
+    {"android.hardware.automotive.can.", 1},
     {"android.hardware.automotive.evs.", 1},
     {"android.hardware.broadcastradio.", 1},
     {"android.hardware.automotive.occupant_awareness.", 1},
