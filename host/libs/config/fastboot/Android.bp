@@ -1,5 +1,5 @@
 //
-// Copyright (C) 2022 The Android Open Source Project
+// Copyright (C) 2017 The Android Open Source Project
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,22 +17,15 @@ package {
     default_applicable_licenses: ["Android-Apache-2.0"],
 }
 
-cc_library_host_static {
-    name: "libcvd_parser",
+cc_library_static {
+    name: "libcuttlefish_host_config_fastboot",
     srcs: [
-        "instance/cf_vm_configs.cpp",
-        "instance/cf_boot_configs.cpp",
-        "instance/cf_security_configs.cpp",
-        "instance/cf_graphics_configs.cpp",
-        "instance/cf_metrics_configs.cpp",
-        "cf_configs_common.cpp",
-        "cf_configs_instances.cpp",
-        "load_configs_parser.cpp",
+        "launch.cpp",
     ],
-    static_libs: [
-        "libprotobuf-cpp-full",
-        "libcuttlefish_launch_cvd_proto",
+    shared_libs: [
+        "libbase",
+        "libfruit",
+        "libjsoncpp",
     ],
-    defaults: ["cvd_lib_defaults"],
+    defaults: ["cuttlefish_host"],
 }
-
