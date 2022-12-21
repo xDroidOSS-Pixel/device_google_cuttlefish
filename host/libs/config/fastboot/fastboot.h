@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022 The Android Open Source Project
+ * Copyright (C) 2018 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,23 +15,13 @@
  */
 #pragma once
 
-#include <string>
-#include <unordered_set>
-#include <vector>
+#include <fruit/fruit.h>
 
-#include <cvd_server.pb.h>
+#include "host/libs/config/cuttlefish_config.h"
 
 namespace cuttlefish {
-namespace cvd_common {
 
-using Args = std::vector<std::string>;
-using Envs = std::unordered_map<std::string, std::string>;
+fruit::Component<fruit::Required<const CuttlefishConfig::InstanceSpecific>>
+LaunchFastbootComponent();
 
-Envs ConvertToEnvs(
-    const google::protobuf::Map<std::string, std::string>& proto_map);
-
-Args ConvertToArgs(
-    const google::protobuf::RepeatedPtrField<std::string>& proto_args);
-
-}  // namespace cvd_common
 }  // namespace cuttlefish

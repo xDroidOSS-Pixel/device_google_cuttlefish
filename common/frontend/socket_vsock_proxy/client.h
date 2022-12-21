@@ -13,26 +13,40 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package {
-    default_applicable_licenses: ["Android-Apache-2.0"],
-}
+#pragma once
 
-cc_library_host_static {
-    name: "libcvd_parser",
-    srcs: [
-        "instance/cf_vm_configs.cpp",
-        "instance/cf_boot_configs.cpp",
-        "instance/cf_security_configs.cpp",
-        "instance/cf_graphics_configs.cpp",
-        "instance/cf_metrics_configs.cpp",
-        "cf_configs_common.cpp",
-        "cf_configs_instances.cpp",
-        "load_configs_parser.cpp",
-    ],
-    static_libs: [
-        "libprotobuf-cpp-full",
-        "libcuttlefish_launch_cvd_proto",
-    ],
-    defaults: ["cvd_lib_defaults"],
-}
+#include "common/libs/fs/shared_fd.h"
 
+namespace cuttlefish {
+namespace socket_proxy {
+
+class Client {
+ public:
+  virtual SharedFD Start() = 0;
+  virtual ~Client() = default;
+};
+
+class TcpClient : public Client {
+ public:
+  TcpClient(std::string host, int port);
+  SharedFD Start() override;
+
+ private:
+  std::string host_;
+  int port_;
+  int last_failure_reason_ = 0;
+};
+
+class VsockClient : public Client {
+ public:
+  VsockClient(int id, int port);
+  SharedFD Start() override;
+
+ private:
+  int id_;
+  int port_;
+  int last_failure_reason_ = 0;
+};
+
+}
+}
