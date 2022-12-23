@@ -131,16 +131,9 @@ struct VersionedAidlPackage {
 
 /*
  * Always missing AIDL packages that are not served on Cuttlefish.
- * These are typically types-only packages.
+ * These are typically ypes-only packages.
  */
 static const std::set<std::string> kAlwaysMissingAidl = {
-
-    // android.frameworks.cameraservice.common is a type only package use by
-    // android.frameworks.cameraservice.device.
-    // android.frameworks.cameraservice.device is an interface returnd by
-    // android.frameworks.cameraservice.service.
-    "android.frameworks.cameraservice.common.",
-    "android.frameworks.cameraservice.device.",
 
     // types-only packages, which never expect a default implementation
     "android.hardware.audio.common.",
@@ -152,7 +145,7 @@ static const std::set<std::string> kAlwaysMissingAidl = {
     "android.media.audio.common.",
     "android.hardware.radio.",
     "android.hardware.uwb.fira_android.",
-    //"android.hardware.power.stats.",
+    "android.hardware.power.stats.",
 
     // android.hardware.camera.device is an interface returned by
     // android.hardware.camera.provider.
@@ -202,9 +195,6 @@ static const std::set<VersionedAidlPackage> kKnownMissingAidl = {
 
     // No implementation on cuttlefish for fastboot AIDL hal
     {"android.hardware.fastboot.", 1},
-
-    // No implementation on cuttlefish for power stats hal
-    {"android.hardware.power.stats.", 2},
 
     // These types are only used in TV.
     {"android.hardware.tv.cec.", 1},
