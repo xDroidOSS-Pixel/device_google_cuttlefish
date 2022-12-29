@@ -337,9 +337,6 @@ DEFINE_string(wmediumd_config, CF_DEFAULTS_WMEDIUMD_CONFIG,
               "configuration is used which adds MAC addresses for up to 16 "
               "cuttlefish instances including AP.");
 
-DEFINE_string(ap_esp_image, CF_DEFAULTS_AP_ESP_IMAGE,
-              "Location of cuttlefish AP esp image. If the image does not exist, "
-              "an esp partition image is created with default bootloaders.");
 DEFINE_string(ap_rootfs_image, CF_DEFAULTS_AP_ROOTFS_IMAGE,
               "rootfs image for AP instance");
 DEFINE_string(ap_kernel_image, CF_DEFAULTS_AP_KERNEL_IMAGE,
@@ -829,13 +826,8 @@ Result<CuttlefishConfig> InitializeCuttlefishConfiguration(
   if (!FLAGS_ap_rootfs_image.empty()) {
     ap_rootfs_image = android::base::Split(FLAGS_ap_rootfs_image, ",")[0];
   }
-  std::string ap_esp_image = "";
-  if (!FLAGS_ap_esp_image.empty()) {
-    ap_esp_image = android::base::Split(FLAGS_ap_esp_image, ",")[0];
-  }
 
   tmp_config_obj.set_ap_rootfs_image(ap_rootfs_image);
-  tmp_config_obj.set_ap_esp_image(ap_esp_image);
   tmp_config_obj.set_ap_kernel_image(FLAGS_ap_kernel_image);
 
   tmp_config_obj.set_wmediumd_config(FLAGS_wmediumd_config);
@@ -859,7 +851,7 @@ Result<CuttlefishConfig> InitializeCuttlefishConfiguration(
   if (is_bt_netsim) {
     tmp_config_obj.netsim_radio_enable(CuttlefishConfig::NetsimRadio::Bluetooth);
   }
-  // end of vectorize ap_rootfs_image, ap_esp_image, ap_kernel_image, wmediumd_config
+  // end of vectorize ap_rootfs_image, ap_kernel_image, wmediumd_config
 
   auto instance_nums =
       CF_EXPECT(InstanceNumsCalculator().FromGlobalGflags().Calculate());
@@ -1350,14 +1342,10 @@ Result<CuttlefishConfig> InitializeCuttlefishConfiguration(
           !FLAGS_start_webrtc_sig_server);
     }
 
-#ifndef ENFORCE_MAC80211_HWSIM
-    const bool start_wmediumd = false;
-#else
     // Start wmediumd process for the first instance if
     // vhost_user_mac80211_hwsim is not specified.
     const bool start_wmediumd =
         FLAGS_vhost_user_mac80211_hwsim.empty() && is_first_instance;
-#endif
 
     if (start_wmediumd) {
       // TODO(b/199020470) move this to the directory for shared resources
