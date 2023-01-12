@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 The Android Open Source Project
+ * Copyright (C) YYYY The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,20 +13,3 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-syntax = "proto3";
-
-package cuttlefish;
-
-message InstanceDisplay {
-  int32 width = 1;
-  int32 height = 2;
-  int32 dpi = 3;
-  int32 refresh_rate_hertz = 4;
-}
-message InstanceDisplays {
-  repeated InstanceDisplay displays = 1;
-}
-message InstancesDisplays {
-  repeated InstanceDisplays instances = 1;
-}
