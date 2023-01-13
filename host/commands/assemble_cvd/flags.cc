@@ -1204,6 +1204,7 @@ Result<CuttlefishConfig> InitializeCuttlefishConfiguration(
     instance.set_data_policy(data_policy_vec[instance_index]);
 
     instance.set_mobile_bridge_name(StrForInstance("cvd-mbr-", num));
+    instance.set_wifi_bridge_name("cvd-wbr");
     instance.set_ethernet_bridge_name("cvd-ebr");
     instance.set_mobile_tap_name(iface_config.mobile_tap.name);
     instance.set_wifi_tap_name(iface_config.wireless_tap.name);
@@ -1418,10 +1419,14 @@ Result<CuttlefishConfig> InitializeCuttlefishConfiguration(
           !FLAGS_start_webrtc_sig_server);
     }
 
+#ifndef ENFORCE_MAC80211_HWSIM
+    const bool start_wmediumd = false;
+#else
     // Start wmediumd process for the first instance if
     // vhost_user_mac80211_hwsim is not specified.
     const bool start_wmediumd =
         FLAGS_vhost_user_mac80211_hwsim.empty() && is_first_instance;
+#endif
 
     if (start_wmediumd) {
       // TODO(b/199020470) move this to the directory for shared resources
