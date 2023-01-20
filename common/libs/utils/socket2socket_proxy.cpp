@@ -31,47 +31,49 @@ namespace cuttlefish {
 namespace {
 
 void Forward(const std::string& label, SharedFD from, SharedFD to) {
+  LOG(DEBUG) << "[" << label << "] Proxy thread started. Starting copying data";
   auto success = to->CopyAllFrom(*from);
   if (!success) {
     if (from->GetErrno()) {
-      LOG(ERROR) << label << ": Error reading: " << from->StrError();
+      LOG(ERROR) << "[" << label << "] Error reading: " << from->StrError();
     }
     if (to->GetErrno()) {
-      LOG(ERROR) << label << ": Error writing: " << to->StrError();
+      LOG(ERROR) << "[" << label << "] Error writing: " << to->StrError();
     }
   }
   to->Shutdown(SHUT_WR);
-  LOG(DEBUG) << label << " completed";
+  LOG(DEBUG) << "[" << label << "] Proxy thread completed";
 }
 
-void SetupProxying(SharedFD client, SharedFD target) {
-  std::thread([client, target]() {
-    std::thread client2target(Forward, "client2target", client, target);
-    Forward("target2client", target, client);
-    client2target.join();
-    // The actual proxying is handled in a detached thread so that this function
-    // returns immediately
-  }).detach();
+void SetupProxying(const std::string& label, SharedFD client, SharedFD target) {
+  LOG(DEBUG) << "[" << label << "] Launching proxy threads";
+  std::thread client2target(Forward, label + "_c2t", client, target);
+  std::thread target2client(Forward, label + "_t2c", target, client);
+  client2target.detach();
+  target2client.detach();
 }
 
 }  // namespace
 
-void Proxy(SharedFD server, std::function<SharedFD()> conn_factory) {
+void Proxy(const std::string& label, SharedFD server, std::function<SharedFD()> conn_factory) {
   while (server->IsOpen()) {
     auto client = SharedFD::Accept(*server);
     if (!client->IsOpen()) {
-      LOG(ERROR) << "Failed to accept connection in server: "
+      LOG(ERROR) << "[" << label << "] Failed to accept incoming connection: "
                  << client->StrError();
       continue;
     }
     auto target = conn_factory();
     if (target->IsOpen()) {
-      SetupProxying(client, target);
+      SetupProxying(label, client, target);
+    } else {
+      LOG(ERROR) << "[" << label << "] Cannot connect to the target to setup proxying: "
+                 << target->StrError();
     }
     // The client will close when it goes out of scope here if the target didn't
     // open.
   }
-  LOG(INFO) << "Server closed: " << server->StrError();
+  LOG(INFO) << "[" << label << "] Proxying ended: " << server->StrError();
 }
 
 }  // namespace cuttlefish
