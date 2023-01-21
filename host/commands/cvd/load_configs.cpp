@@ -96,11 +96,10 @@ class LoadConfigsCommand : public CvdServerHandler {
       return {};
     }
 
-    std::vector<std::string> serialized_data;
     Json::Value json_configs =
         CF_EXPECT(ParseJsonFile(config_path), "parsing input file failed");
 
-    serialized_data =
+    auto cvd_flags =
         CF_EXPECT(ParseCvdConfigs(json_configs), "parsing json configs failed");
 
     DemoCommandSequence ret;
@@ -119,7 +118,7 @@ class LoadConfigsCommand : public CvdServerHandler {
     launch_phone.add_args("cvd");
     launch_phone.add_args("start");
     launch_phone.add_args("--daemon");
-    for (auto& parsed_flag : serialized_data) {
+    for (auto& parsed_flag : cvd_flags.launch_cvd_flags) {
       launch_phone.add_args(parsed_flag);
     }
 
