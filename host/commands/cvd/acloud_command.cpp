@@ -32,8 +32,8 @@
 #include "host/commands/cvd/command_sequence.h"
 #include "host/commands/cvd/instance_lock.h"
 #include "host/commands/cvd/selector/selector_constants.h"
-#include "host/commands/cvd/server.h"
 #include "host/commands/cvd/server_client.h"
+#include "host/commands/cvd/server_command/utils.h"
 #include "host/commands/cvd/types.h"
 #include "host/libs/config/cuttlefish_config.h"
 
@@ -335,7 +335,7 @@ class ConvertAcloudCreateCommand {
       }
     }
     start_command.mutable_selector_opts()->add_args(
-        std::string("--") + selector::kAcquireFileLockOpt + "=no");
+        std::string("--") + selector::kAcquireFileLockOpt + "=false");
     static constexpr char kAndroidProductOut[] = "ANDROID_PRODUCT_OUT";
     auto& start_env = *start_command.mutable_env();
     if (local_image) {
