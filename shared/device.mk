@@ -207,7 +207,8 @@ endif
 #
 # Common manifest for all targets
 #
-DEVICE_MANIFEST_FILE += device/google/cuttlefish/shared/config/manifest.xml
+LOCAL_DEVICE_FCM_MANIFEST_FILE ?= device/google/cuttlefish/shared/config/manifest.xml
+DEVICE_MANIFEST_FILE += $(LOCAL_DEVICE_FCM_MANIFEST_FILE)
 
 #
 # General files
@@ -496,8 +497,10 @@ PRODUCT_COPY_FILES += \
 #
 # Dice HAL
 #
+ifneq ($(filter-out %_riscv64,$(TARGET_PRODUCT)),)
 PRODUCT_PACKAGES += \
     android.hardware.security.dice-service.non-secure-software
+endif
 
 #
 # Power and PowerStats HALs
@@ -520,8 +523,8 @@ PRODUCT_PACKAGES += \
 #
 # Thermal HAL
 #
-PRODUCT_PACKAGES += \
-    android.hardware.thermal-service.example
+LOCAL_THERMAL_HAL_PRODUCT_PACKAGE ?= android.hardware.thermal-service.example
+PRODUCT_PACKAGES += $(LOCAL_THERMAL_HAL_PRODUCT_PACKAGE)
 
 #
 # NeuralNetworks HAL
