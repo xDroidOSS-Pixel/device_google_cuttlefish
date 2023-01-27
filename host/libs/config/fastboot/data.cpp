@@ -13,18 +13,30 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include "host/commands/cvd/demo_multi_vd.h"
-
-#include "host/commands/cvd/server_command/serial_launch.h"
-#include "host/commands/cvd/server_command/serial_preset.h"
+#include "host/libs/config/fastboot/fastboot.h"
 
 namespace cuttlefish {
+namespace {
 
-fruit::Component<fruit::Required<CommandSequenceExecutor>>
-DemoMultiVdComponent() {
-  return fruit::createComponent()
-      .install(cvdSerialLaunchComponent)
-      .install(cvdSerialPresetComponent);
+class FastbootConfigImpl : public FastbootConfig {
+ public:
+  INJECT(FastbootConfigImpl()) {}
+
+  bool ProxyFastboot() const override { return proxy_fastboot_; }
+
+  bool SetProxyFastboot(bool proxy) override {
+    proxy_fastboot_ = proxy;
+    return true;
+  }
+
+ private:
+  bool proxy_fastboot_;
+};
+
+}  // namespace
+
+fruit::Component<FastbootConfig> FastbootConfigComponent() {
+  return fruit::createComponent().bind<FastbootConfig, FastbootConfigImpl>();
 }
 
 }  // namespace cuttlefish
