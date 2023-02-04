@@ -16,37 +16,33 @@
 
 #pragma once
 
-#include <functional>
 #include <memory>
 #include <optional>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 namespace cuttlefish {
 
-class Lib {
+class FlagInfo {
  public:
-  static std::optional<Lib> Load(const char* name);
-
-  Lib() = default;
-
-  Lib(const Lib&) = delete;
-  Lib& operator=(const Lib&) = delete;
-
-  Lib(Lib&&) = default;
-  Lib& operator=(Lib&&) = default;
-
-  using FunctionPtr = void (*)(void);
-
-  FunctionPtr GetSymbol(const char* name);
+  using FlagInfoFieldMap =
+      std::unordered_map<std::string, std::optional<std::string>>;
+  static std::unique_ptr<FlagInfo> Create(
+      const FlagInfoFieldMap& field_value_map);
+  const std::string& Name() const { return name_; }
 
  private:
-  struct LibraryCloser {
-   public:
-    void operator()(void* library);
-  };
+  FlagInfo(const FlagInfoFieldMap& field_value_map)
+      : name_(field_value_map.at("name").value_or("")) {}
 
-  using ManagedLibrary = std::unique_ptr<void, LibraryCloser>;
-
-  ManagedLibrary lib_;
+  // TODO(kwstephenkim): add more fields
+  std::string name_;
 };
+
+using FlagInfoPtr = std::unique_ptr<FlagInfo>;
+
+std::optional<std::vector<FlagInfoPtr>> CollectFlagsFromHelpxml(
+    const std::string& xml_str);
 
 }  // namespace cuttlefish
