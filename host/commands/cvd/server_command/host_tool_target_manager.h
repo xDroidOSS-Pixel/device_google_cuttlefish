@@ -16,16 +16,35 @@
 
 #pragma once
 
+#include <mutex>
+#include <string>
+#include <unordered_map>
+
 #include <fruit/fruit.h>
 
-#include "host/commands/cvd/instance_manager.h"
-#include "host/commands/cvd/server_command/host_tool_target_manager.h"
-#include "host/commands/cvd/server_command/subprocess_waiter.h"
+#include "common/libs/utils/result.h"
+#include "host/commands/cvd/server_command/flags_collector.h"
+#include "host/commands/cvd/server_command/host_tool_target.h"
 
 namespace cuttlefish {
 
-fruit::Component<
-    fruit::Required<InstanceManager, SubprocessWaiter, HostToolTargetManager>>
-cvdStartCommandComponent();
+struct HostToolFlagRequestForm {
+  std::string artifacts_path;
+  std::string start_bin;
+  std::string flag_name;
+};
+
+class HostToolTargetManager {
+ public:
+  INJECT(HostToolTargetManager()) {}
+
+  Result<FlagInfo> ReadFlag(const HostToolFlagRequestForm& request);
+
+ private:
+  using HostToolTargetMap = std::unordered_map<std::string, HostToolTarget>;
+  // map from artifact dir to host tool target information object
+  HostToolTargetMap host_target_table_;
+  std::mutex table_mutex_;
+};
 
 }  // namespace cuttlefish
