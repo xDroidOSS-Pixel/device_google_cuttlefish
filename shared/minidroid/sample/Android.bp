@@ -13,6 +13,7 @@ cc_binary {
     shared_libs: [
         "libbinder_ndk",
         "minidroid_sd",
+        "liblog",
     ],
     static_libs: [
         "com.android.minidroid.testservice-ndk",
@@ -29,9 +30,25 @@ cc_binary {
     shared_libs: [
         "libbinder_ndk",
         "minidroid_sd",
+        "liblog",
     ],
     static_libs: [
         "com.android.minidroid.testservice-ndk",
+    ],
+    apex_available: [
+        "//apex_available:platform",
+    ],
+}
+
+// https://google.github.io/comprehensive-rust/android/aidl/client.html
+rust_binary {
+    name: "client_minidroid_rust",
+    srcs: ["client.rs"],
+    rustlibs: [
+        "com.android.minidroid.testservice-rust",
+        "liblog_rust",
+        "liblogger",
+        "librpcbinder_rs",
     ],
     apex_available: [
         "//apex_available:platform",
