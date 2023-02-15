@@ -46,10 +46,22 @@ cvd::Request MakeRequest(const MakeRequestParam& args_and_envs,
     (*command_request->mutable_env())[key] = value;
   }
 
-  if (!Contains(command_request->env(), "ANDROID_HOST_OUT")) {
-    // see b/254418863
-    (*command_request->mutable_env())["ANDROID_HOST_OUT"] =
-        android::base::Dirname(android::base::GetExecutableDirectory());
+  /*
+   * the client must set the kAndroidHostOut environment variable. There were,
+   * however, a few branches where kAndroidSoongHostOut replaced
+   * kAndroidHostOut. Cvd server eventually read kAndroidHostOut only and set
+   * both for the subtools.
+   *
+   * If none of the two are set, cvd server tries to use the parent directory of
+   * the client cvd executable as env[kAndroidHostOut].
+   *
+   */
+  if (!Contains(command_request->env(), kAndroidHostOut)) {
+    const std::string new_android_host_out =
+        Contains(command_request->env(), kAndroidSoongHostOut)
+            ? (*command_request->mutable_env())[kAndroidSoongHostOut]
+            : android::base::Dirname(android::base::GetExecutableDirectory());
+    (*command_request->mutable_env())[kAndroidHostOut] = new_android_host_out;
   }
 
   std::unique_ptr<char, void (*)(void*)> cwd(getcwd(nullptr, 0), &free);
@@ -57,23 +69,6 @@ cvd::Request MakeRequest(const MakeRequestParam& args_and_envs,
   command_request->set_wait_behavior(wait_behavior);
 
   return request;
-}
-
-Result<std::string> StopBin(const std::string& android_host_out) {
-  std::string bin_dir_path = android_host_out + "/bin/";
-  std::vector<std::string> bins_to_try{"cvd_internal_stop", "stop_cvd"};
-  std::string stop_bin;
-  for (const auto& bin : bins_to_try) {
-    std::stringstream bin_path;
-    bin_path << bin_dir_path << bin;
-    if (FileExists(bin_path.str()) && !DirectoryExists(bin_path.str())) {
-      stop_bin = bin;
-      break;
-    }
-  }
-  CF_EXPECT(!stop_bin.empty(),
-            "Executable to stop cvd doesn't exist in " << android_host_out);
-  return stop_bin;
 }
 
 }  // namespace cuttlefish

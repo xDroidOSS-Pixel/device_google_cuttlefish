@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022 The Android Open Source Project
+ * Copyright (C) 2023 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,18 +14,19 @@
  * limitations under the License.
  */
 
-#include "host/commands/cvd/server_command/components.h"
+#pragma once
 
-#include "host/commands/cvd/server_command/fetch.h"
-#include "host/commands/cvd/server_command/fleet.h"
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+#include <fruit/fruit.h>
 
 namespace cuttlefish {
 
-fruit::Component<fruit::Required<InstanceManager, SubprocessWaiter>>
-cvdCommandComponent() {
-  return fruit::createComponent()
-      .install(cvdFleetCommandComponent)
-      .install(cvdFetchCommandComponent);
-}
+using OperationToBinsMap =
+    std::unordered_map<std::string, std::vector<std::string>>;
+
+fruit::Component<OperationToBinsMap> OperationToBinsMapComponent();
 
 }  // namespace cuttlefish
