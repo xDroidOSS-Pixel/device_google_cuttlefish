@@ -16,35 +16,43 @@
 
 #pragma once
 
+#include <functional>
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include <fruit/fruit.h>
 
 #include "common/libs/utils/result.h"
 #include "host/commands/cvd/server_command/flags_collector.h"
 #include "host/commands/cvd/server_command/host_tool_target.h"
+#include "host/commands/cvd/server_command/operation_to_bins_map.h"
 
 namespace cuttlefish {
 
 struct HostToolFlagRequestForm {
   std::string artifacts_path;
-  std::string start_bin;
+  // operations like stop, start, status, etc
+  std::string op;
   std::string flag_name;
+};
+
+struct HostToolExecNameRequestForm {
+  std::string artifacts_path;
+  // operations like stop, start, status, etc
+  std::string op;
 };
 
 class HostToolTargetManager {
  public:
-  INJECT(HostToolTargetManager()) {}
-
-  Result<FlagInfo> ReadFlag(const HostToolFlagRequestForm& request);
-
- private:
-  using HostToolTargetMap = std::unordered_map<std::string, HostToolTarget>;
-  // map from artifact dir to host tool target information object
-  HostToolTargetMap host_target_table_;
-  std::mutex table_mutex_;
+  virtual ~HostToolTargetManager() = default;
+  virtual Result<FlagInfo> ReadFlag(const HostToolFlagRequestForm& request) = 0;
+  virtual Result<std::string> ExecBaseName(
+      const HostToolExecNameRequestForm& request) = 0;
 };
+
+fruit::Component<fruit::Required<OperationToBinsMap>, HostToolTargetManager>
+HostToolTargetManagerComponent();
 
 }  // namespace cuttlefish
