@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 The Android Open Source Project
+ * Copyright (C) 2023 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,22 +14,12 @@
  * limitations under the License.
  */
 
-#pragma once
-
 #include <string>
-#include <unordered_map>
-
-#include "common/libs/utils/result.h"
-#include "host/libs/config/cuttlefish_config.h"
 
 namespace cuttlefish {
 
-Result<std::unordered_map<std::string, std::string>> BootconfigArgsFromConfig(
-    const CuttlefishConfig& config,
-    const CuttlefishConfig::InstanceSpecific& instance);
+bool IsSparseImage(const std::string& image_path);
 
-Result<std::string> BootconfigArgsString(
-    const std::unordered_map<std::string, std::string>& args,
-    const std::string& separator);
+bool ConvertToRawImage(const std::string& image_path);
 
 }  // namespace cuttlefish

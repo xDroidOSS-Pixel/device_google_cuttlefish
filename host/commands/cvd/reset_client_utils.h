@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 The Android Open Source Project
+ * Copyright (C) 2023 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,20 +16,18 @@
 
 #pragma once
 
-#include <string>
-#include <unordered_map>
-
 #include "common/libs/utils/result.h"
-#include "host/libs/config/cuttlefish_config.h"
 
 namespace cuttlefish {
 
-Result<std::unordered_map<std::string, std::string>> BootconfigArgsFromConfig(
-    const CuttlefishConfig& config,
-    const CuttlefishConfig::InstanceSpecific& instance);
-
-Result<std::string> BootconfigArgsString(
-    const std::unordered_map<std::string, std::string>& args,
-    const std::string& separator);
+/*
+ * Runs stop_cvd for all cuttlefish instances found based on run_cvd processes,
+ * and send SIGKILL to the run_cvd processes.
+ *
+ * If cvd_server_children_only is set, it kills the run_cvd processes that were
+ * started by a cvd server process.
+ */
+Result<void> KillAllCuttlefishInstances(
+    const bool cvd_server_children_only = false);
 
 }  // namespace cuttlefish
