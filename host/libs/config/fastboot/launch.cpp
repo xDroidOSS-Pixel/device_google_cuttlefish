@@ -59,12 +59,14 @@ class FastbootProxy : public CommandSource, public KernelLogPipeConsumer {
   }
 
  private:
+  std::unordered_set<SetupFeature*> Dependencies() const override {
+    return {static_cast<SetupFeature*>(&log_pipe_provider_)};
+  }
+
   bool Setup() override {
     kernel_log_pipe_ = log_pipe_provider_.KernelLogPipe();
     return kernel_log_pipe_->IsOpen();
   }
-
-  std::unordered_set<SetupFeature*> Dependencies() const override { return {}; }
 
   const CuttlefishConfig::InstanceSpecific& instance_;
   const FastbootConfig& fastboot_config_;
