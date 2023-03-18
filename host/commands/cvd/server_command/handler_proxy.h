@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2019 The Android Open Source Project
+ * Copyright (C) 2023 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,26 +16,13 @@
 
 #pragma once
 
-#include <memory>
-
 #include <fruit/fruit.h>
 
-#include "host/libs/screen_connector/screen_connector_common.h"
-#include "host/libs/wayland/wayland_server.h"
+#include "host/commands/cvd/command_sequence.h"
 
 namespace cuttlefish {
 
-class WaylandScreenConnector {
- public:
-  struct FramesFd {};
-  INJECT(WaylandScreenConnector(ANNOTATED(FramesFd, int) frames_fd));
-
-  void SetFrameCallback(GenerateProcessedFrameCallbackImpl frame_callback);
-
-  void SetDisplayEventCallback(DisplayEventCallback event_callback);
-
- private:
-  std::unique_ptr<wayland::WaylandServer> server_;
-};
+fruit::Component<fruit::Required<CommandSequenceExecutor>>
+CvdHandlerProxyComponent();
 
 }  // namespace cuttlefish
