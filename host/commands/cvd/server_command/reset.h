@@ -14,19 +14,12 @@
  * limitations under the License.
  */
 
-#include "host/commands/cvd/driver_flags.h"
+#pragma once
 
-#include <sstream>
+#include <fruit/fruit.h>
 
 namespace cuttlefish {
 
-CvdFlag<bool> DriverFlags::HelpFlag() {
-  const bool default_val = false;
-  CvdFlag<bool> help_flag(kHelp, default_val);
-  std::stringstream help;
-  help << "--" << kHelp << "to print this message.";
-  help_flag.SetHelpMessage(help.str());
-  return help_flag;
-}
+fruit::Component<> CvdResetComponent();
 
 }  // namespace cuttlefish
