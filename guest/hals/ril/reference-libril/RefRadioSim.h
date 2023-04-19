@@ -16,14 +16,16 @@
 
 #pragma once
 
-#include <fruit/fruit.h>
+#include <libradiocompat/RadioSim.h>
 
-#include "host/commands/cvd/instance_manager.h"
-#include "host/commands/cvd/server_command/subprocess_waiter.h"
+namespace cf::ril {
 
-namespace cuttlefish {
+class RefRadioSim : public android::hardware::radio::compat::RadioSim {
+  public:
+    using android::hardware::radio::compat::RadioSim::RadioSim;
 
-fruit::Component<fruit::Required<InstanceManager, SubprocessWaiter>>
-CvdRestartDeviceComponent();
-
-}  // namespace cuttlefish
+    ::ndk::ScopedAStatus iccCloseLogicalChannelWithSessionInfo(
+            int32_t serial,
+            const ::aidl::android::hardware::radio::sim::SessionInfo& SessionInfo) override;
+};
+}  // namespace cf::ril
