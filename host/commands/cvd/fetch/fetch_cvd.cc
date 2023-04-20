@@ -16,7 +16,6 @@
 #include "host/commands/cvd/fetch/fetch_cvd.h"
 
 #include <sys/stat.h>
-#include <unistd.h>
 
 #include <chrono>
 #include <fstream>
@@ -45,7 +44,6 @@
 #include "host/libs/config/fetcher_config.h"
 #include "host/libs/web/build_api.h"
 #include "host/libs/web/credential_source.h"
-#include "host/libs/web/install_zip.h"
 
 namespace cuttlefish {
 namespace {
@@ -67,6 +65,7 @@ const std::string USAGE_MESSAGE =
     "\"branch\" - latest build of \"branch\" for "
     "\"aosp_cf_x86_phone-userdebug\"\n"
     "\"build_id\" - build \"build_id\" for \"aosp_cf_x86_phone-userdebug\"\n";
+const mode_t RWX_ALL_MODE = S_IRWXU | S_IRWXG | S_IRWXO;
 
 struct BuildApiFlags {
   std::string api_key = "";
@@ -98,7 +97,7 @@ struct DownloadFlags {
 };
 
 struct FetchFlags {
-  std::string target_directory = CurrentDirectory();
+  std::string target_directory = "";
   bool keep_downloaded_archives = false;
   bool helpxml = false;
   BuildApiFlags build_api_flags;
@@ -120,10 +119,14 @@ std::vector<Flag> GetFlagsVector(FetchFlags& fetch_flags,
                                  BuildApiFlags& build_api_flags,
                                  BuildSourceFlags& build_source_flags,
                                  DownloadFlags& download_flags,
-                                 int& retry_period) {
+                                 int& retry_period, std::string& directory) {
   std::vector<Flag> flags;
-  flags.emplace_back(GflagsCompatFlag("directory", fetch_flags.target_directory)
-                         .Help("Target directory to fetch files into."));
+  flags.emplace_back(
+      GflagsCompatFlag("directory", directory)
+          .Help("Target directory to fetch files into. (deprecated)"));
+  flags.emplace_back(
+      GflagsCompatFlag("target_directory", fetch_flags.target_directory)
+          .Help("Target directory to fetch files into."));
   flags.emplace_back(GflagsCompatFlag("keep_downloaded_archives",
                                       fetch_flags.keep_downloaded_archives)
                          .Help("Keep downloaded zip/tar."));
@@ -174,6 +177,7 @@ std::vector<Flag> GetFlagsVector(FetchFlags& fetch_flags,
                        download_flags.download_target_files_zip)
           .Help("Whether to fetch the -target_files-*.zip file."));
 
+  flags.emplace_back(UnexpectedArgumentGuard());
   flags.emplace_back(HelpFlag(flags, USAGE_MESSAGE));
   flags.emplace_back(
       HelpXmlFlag(flags, std::cout, fetch_flags.helpxml, USAGE_MESSAGE));
@@ -186,12 +190,26 @@ Result<FetchFlags> GetFlagValues(int argc, char** argv) {
   BuildSourceFlags build_source_flags;
   DownloadFlags download_flags;
   int retry_period = DEFAULT_RETRY_PERIOD;
+  std::string directory = "";
+
   std::vector<Flag> flags =
       GetFlagsVector(fetch_flags, build_api_flags, build_source_flags,
-                     download_flags, retry_period);
+                     download_flags, retry_period, directory);
   std::vector<std::string> args = ArgsToVec(argc - 1, argv + 1);
   CF_EXPECT(ParseFlags(flags, args), "Could not process command line flags.");
+
   build_api_flags.wait_retry_period = std::chrono::seconds(retry_period);
+  if (directory != "") {
+    LOG(ERROR) << "Please use --target_directory instead of --directory";
+    if (fetch_flags.target_directory == "") {
+      fetch_flags.target_directory = directory;
+    }
+  } else {
+    if (fetch_flags.target_directory == "") {
+      fetch_flags.target_directory = CurrentDirectory();
+    }
+  }
+
   fetch_flags.build_api_flags = build_api_flags;
   fetch_flags.build_source_flags = build_source_flags;
   fetch_flags.download_flags = download_flags;
@@ -239,21 +257,9 @@ Result<std::vector<std::string>> DownloadImages(
     const bool keep_archives) {
   std::string local_path =
       CF_EXPECT(DownloadImageZip(build_api, build, target_directory));
-
-  std::vector<std::string> files =
-      ExtractImages(local_path, target_directory, images);
-  CF_EXPECT(!files.empty(), "Could not extract " << local_path);
-  if (!keep_archives && unlink(local_path.c_str()) != 0) {
-    LOG(ERROR) << "Could not delete " << local_path;
-    files.push_back(local_path);
-  }
+  std::vector<std::string> files = CF_EXPECT(
+      ExtractImages(local_path, target_directory, images, keep_archives));
   return files;
-}
-
-Result<std::vector<std::string>> DownloadImages(
-    BuildApi& build_api, const Build& build,
-    const std::string& target_directory, const bool keep_archives) {
-  return DownloadImages(build_api, build, target_directory, {}, keep_archives);
 }
 
 Result<std::vector<std::string>> DownloadTargetFiles(
@@ -282,24 +288,12 @@ Result<std::vector<std::string>> DownloadHostPackage(
             "Unable to download " << build << ":" << HOST_TOOLS << " to "
                                   << local_path);
 
-  Archive archive(local_path);
-  CF_EXPECT(archive.ExtractAll(target_directory),
-            "Could not extract \"" << local_path << "\" to \""
-                                   << target_directory << "\"");
-  std::vector<std::string> files = archive.Contents();
-  for (auto& file : files) {
-    file = target_directory + "/" + file;
-  }
-  if (!keep_archives && unlink(local_path.c_str()) != 0) {
-    LOG(ERROR) << "Could not delete " << local_path;
-    files.push_back(local_path);
-  }
-  return files;
+  return ExtractArchiveContents(local_path, target_directory, keep_archives);
 }
 
 Result<std::vector<std::string>> DownloadOtaTools(
     BuildApi& build_api, const Build& build,
-    const std::string& target_directory) {
+    const std::string& target_directory, const bool keep_archives) {
   auto artifacts = CF_EXPECT(build_api.Artifacts(build, OTA_TOOLS));
   CF_EXPECT(ArtifactsContains(artifacts, OTA_TOOLS),
             "Target " << build << " did not have " << OTA_TOOLS);
@@ -310,21 +304,8 @@ Result<std::vector<std::string>> DownloadOtaTools(
                                   << local_path);
 
   std::string otatools_dir = target_directory + OTA_TOOLS_DIR;
-  if (!DirectoryExists(otatools_dir)) {
-    CF_EXPECT(
-        mkdir(otatools_dir.c_str(), 0777) == 0,
-        "Could not create \"" << otatools_dir << "\": " << strerror(errno));
-  }
-  Archive archive(local_path);
-  CF_EXPECT(archive.ExtractAll(otatools_dir), "Failed to extract \""
-                                                  << local_path << "\" to \""
-                                                  << otatools_dir << "\"");
-  std::vector<std::string> files = archive.Contents();
-  for (auto& file : files) {
-    file = target_directory + OTA_TOOLS_DIR + file;
-  }
-  files.push_back(local_path);
-  return files;
+  CF_EXPECT(EnsureDirectoryExists(otatools_dir, RWX_ALL_MODE));
+  return ExtractArchiveContents(local_path, otatools_dir, keep_archives);
 }
 
 Result<std::string> DownloadMiscInfo(BuildApi& build_api, const Build& build,
@@ -364,26 +345,17 @@ Result<std::vector<std::string>> DownloadBoot(
   std::vector<std::string> files{target_boot};
   std::string img_zip =
       CF_EXPECT(DownloadImageZip(build_api, build, target_dir));
-  std::vector<std::string> extracted_boot =
-      ExtractImages(img_zip, target_dir, {boot_artifact});
-  CF_EXPECT(!extracted_boot.empty(),
-            "No " << boot_artifact << " in the img zip.");
-  if (extracted_boot[0] != target_boot) {
-    CF_EXPECT(rename(extracted_boot[0].c_str(), target_boot.c_str()) == 0,
-              "rename(\"" << extracted_boot[0] << "\", \"" << target_boot
-                          << "\") failed: " << strerror(errno));
+  const bool keep_img_zip_archive_for_vendor_boot = true;
+  std::string extracted_boot =
+      CF_EXPECT(ExtractImage(img_zip, target_dir, boot_artifact,
+                             keep_img_zip_archive_for_vendor_boot));
+  if (extracted_boot != target_boot) {
+    CF_EXPECT(RenameFile(extracted_boot, target_boot));
   }
-
-  std::vector<std::string> extracted_vendor_boot =
-      ExtractImages(img_zip, target_dir, {"vendor_boot.img"});
-  if (!extracted_vendor_boot.empty()) {
-    files.push_back(extracted_vendor_boot[0]);
-  } else {
-    LOG(INFO) << "No vendor_boot.img in the img zip.";
-  }
-
-  if (!keep_archives && unlink(img_zip.c_str()) != 0) {
-    LOG(ERROR) << "Could not delete " << img_zip;
+  Result<std::string> extracted_vendor_boot_result =
+      ExtractImage(img_zip, target_dir, "vendor_boot.img", keep_archives);
+  if (extracted_vendor_boot_result.ok()) {
+    files.push_back(extracted_vendor_boot_result.value());
   }
   return files;
 }
@@ -447,8 +419,6 @@ Result<void> ProcessHostPackage(BuildApi& build_api, const Build& build,
                                 const bool keep_archives) {
   std::vector<std::string> host_package_files = CF_EXPECT(
       DownloadHostPackage(build_api, build, target_dir, keep_archives));
-  CF_EXPECT(!host_package_files.empty(),
-            "Could not download host package for " << build);
   CF_EXPECT(AddFilesToConfig(host_package_build != ""
                                  ? FileSource::HOST_PACKAGE_BUILD
                                  : FileSource::DEFAULT_BUILD,
@@ -552,10 +522,7 @@ Result<void> FetchCvdMain(int argc, char** argv) {
 #endif
 
   std::string target_dir = AbsolutePath(flags.target_directory);
-  if (!DirectoryExists(target_dir)) {
-    CF_EXPECT(mkdir(target_dir.c_str(), 0777) == 0,
-              "mkdir(" << target_dir << ", 0777) failed: " << strerror(errno));
-  }
+  CF_EXPECT(EnsureDirectoryExists(target_dir, RWX_ALL_MODE));
   FetcherConfig config;
   curl_global_init(CURL_GLOBAL_DEFAULT);
   {
@@ -571,19 +538,17 @@ Result<void> FetchCvdMain(int argc, char** argv) {
 
     if (builds.otatools.has_value()) {
       std::vector<std::string> ota_tools_files = CF_EXPECT(
-          DownloadOtaTools(build_api, builds.otatools.value(), target_dir));
-      CF_EXPECT(!ota_tools_files.empty(),
-                "Could not download ota tools for " << builds.otatools.value());
+          DownloadOtaTools(build_api, builds.otatools.value(), target_dir,
+                           flags.keep_downloaded_archives));
       CF_EXPECT(AddFilesToConfig(FileSource::DEFAULT_BUILD,
                                  builds.default_build, ota_tools_files, &config,
                                  target_dir));
     }
     if (flags.download_flags.download_img_zip) {
-      std::vector<std::string> image_files =
-          CF_EXPECT(DownloadImages(build_api, builds.default_build, target_dir,
-                                   flags.keep_downloaded_archives));
-      CF_EXPECT(!image_files.empty(),
-                "Could not download images for " << builds.default_build);
+      std::string local_path = CF_EXPECT(
+          DownloadImageZip(build_api, builds.default_build, target_dir));
+      std::vector<std::string> image_files = CF_EXPECT(ExtractArchiveContents(
+          local_path, target_dir, flags.keep_downloaded_archives));
       LOG(INFO) << "Adding img-zip files for default build";
       for (auto& file : image_files) {
         LOG(INFO) << file;
@@ -595,9 +560,7 @@ Result<void> FetchCvdMain(int argc, char** argv) {
     if (builds.system.has_value() ||
         flags.download_flags.download_target_files_zip) {
       std::string default_target_dir = target_dir + "/default";
-      CF_EXPECT(mkdir(default_target_dir.c_str(),
-                      S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == 0,
-                "Could not create " << default_target_dir);
+      CF_EXPECT(EnsureDirectoryExists(default_target_dir), RWX_ALL_MODE);
       std::vector<std::string> target_files = CF_EXPECT(DownloadTargetFiles(
           build_api, builds.default_build, default_target_dir));
       CF_EXPECT(!target_files.empty(),
@@ -628,10 +591,7 @@ Result<void> FetchCvdMain(int argc, char** argv) {
         }
       }
       std::string system_target_dir = target_dir + "/system";
-      CF_EXPECT(mkdir(system_target_dir.c_str(),
-                      S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == 0,
-                "Could not create \"" << system_target_dir
-                                      << "\": " << strerror(errno));
+      CF_EXPECT(EnsureDirectoryExists(system_target_dir, RWX_ALL_MODE));
       std::vector<std::string> target_files = CF_EXPECT(DownloadTargetFiles(
           build_api, builds.system.value(), system_target_dir));
       CF_EXPECT(!target_files.empty(), "Could not download target files for "
@@ -640,50 +600,33 @@ Result<void> FetchCvdMain(int argc, char** argv) {
                                  builds.system.value(), target_files, &config,
                                  target_dir));
       if (!system_in_img_zip) {
-        if (ExtractImages(target_files[0], target_dir, {"IMAGES/system.img"}) !=
-            std::vector<std::string>{}) {
-          std::string extracted_system = target_dir + "/IMAGES/system.img";
-          std::string target_system = target_dir + "/system.img";
-          CF_EXPECT(
-              rename(extracted_system.c_str(), target_system.c_str()) == 0,
-              "rename(\"" << extracted_system << "\", \"" << target_system
-                          << "\") failed: " << strerror(errno));
-        } else {
-          return CF_ERR("Could not get system.img from the target zip");
+        std::string extracted_system = CF_EXPECT(
+            ExtractImage(target_files[0], target_dir, "IMAGES/system.img",
+                         flags.keep_downloaded_archives));
+        CF_EXPECT(RenameFile(extracted_system, target_dir + "/system.img"));
+
+        Result<std::string> extracted_product_result =
+            ExtractImage(target_files[0], target_dir, "IMAGES/product.img",
+                         flags.keep_downloaded_archives);
+        if (extracted_product_result.ok()) {
+          CF_EXPECT(RenameFile(extracted_product_result.value(),
+                               target_dir + "/product.img"));
         }
-        if (ExtractImages(target_files[0], target_dir,
-                          {"IMAGES/product.img"}) !=
-            std::vector<std::string>{}) {
-          std::string extracted_product = target_dir + "/IMAGES/product.img";
-          std::string target_product = target_dir + "/product.img";
-          CF_EXPECT(
-              rename(extracted_product.c_str(), target_product.c_str()) == 0,
-              "rename(\"" << extracted_product << "\", \"" << target_product
-                          << "\") failed: " << strerror(errno));
+
+        Result<std::string> extracted_system_ext_result =
+            ExtractImage(target_files[0], target_dir, "IMAGES/system_ext.img",
+                         flags.keep_downloaded_archives);
+        if (extracted_system_ext_result.ok()) {
+          CF_EXPECT(RenameFile(extracted_system_ext_result.value(),
+                               target_dir + "/system_ext.img"));
         }
-        if (ExtractImages(target_files[0], target_dir,
-                          {"IMAGES/system_ext.img"}) !=
-            std::vector<std::string>{}) {
-          std::string extracted_system_ext =
-              target_dir + "/IMAGES/system_ext.img";
-          std::string target_system_ext = target_dir + "/system_ext.img";
-          CF_EXPECT(rename(extracted_system_ext.c_str(),
-                           target_system_ext.c_str()) == 0,
-                    "rename(\"" << extracted_system_ext << "\", \""
-                                << target_system_ext
-                                << "\") failed: " << strerror(errno));
-        }
-        if (ExtractImages(target_files[0], target_dir,
-                          {"IMAGES/vbmeta_system.img"}) !=
-            std::vector<std::string>{}) {
-          std::string extracted_vbmeta_system =
-              target_dir + "/IMAGES/vbmeta_system.img";
-          std::string target_vbmeta_system = target_dir + "/vbmeta_system.img";
-          CF_EXPECT(rename(extracted_vbmeta_system.c_str(),
-                           target_vbmeta_system.c_str()) == 0,
-                    "rename(\"" << extracted_vbmeta_system << "\", \""
-                                << "\"" << target_vbmeta_system
-                                << "\") failed: \"" << strerror(errno) << "\"");
+
+        Result<std::string> extracted_vbmeta_system = ExtractImage(
+            target_files[0], target_dir, "IMAGES/vbmeta_system.img",
+            flags.keep_downloaded_archives);
+        if (extracted_vbmeta_system.ok()) {
+          CF_EXPECT(RenameFile(extracted_vbmeta_system.value(),
+                               target_dir + "/vbmeta_system.img"));
         }
         // This should technically call AddFilesToConfig with the produced
         // files, but it will conflict with the ones produced from the default
